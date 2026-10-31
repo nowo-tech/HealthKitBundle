@@ -4,7 +4,6 @@
 
 - [Unreleased](#unreleased)
 - [To 1.0.0](#to-100)
-- [To 1.0.0 (initial release)](#to-100-initial-release)
   - [Requirements](#requirements)
   - [Enable and configure](#enable-and-configure)
   - [Migrating from an in-app health controller](#migrating-from-an-in-app-health-controller)
@@ -14,15 +13,7 @@
 
 ## To 1.0.0
 
-From **0.0.0**:
-
-```bash
-composer update nowo-tech/health-kit-bundle
-```
-
-Nothing yet beyond the initial 1.0.0 content below.
-
-## To 1.0.0 (initial release)
+Initial release.
 
 ### Requirements
 
