@@ -43,10 +43,10 @@ HTTP ──► MetricsController ──► BearerToken / roles
 | --- | --- |
 | `Controller` | `HealthController` (live/ready), `MetricsController` (/metrics). Not autoconfigured. |
 | `Health` | `HealthChecker`, `RegisteredProbe`, `ProbeReport`, `HealthReport`, `ErrorSanitizer`. |
-| `Http` | `DetailsAccessPolicy`, `BearerToken` (constant-time bearer check). |
+| `Http` | `DetailsAccessPolicy`, `BearerToken` (constant-time bearer check, `resolve()` of static token vs provider), `TokenProviderInterface`, `DetailsTokenProviderInterface`. |
 | `Probe` | `HealthProbeInterface`, `ProbeResult`, `HealthStatus`, built-in probes. |
 | `Runtime` | `FrankenPhpRuntime` (request server bag → process env). |
-| `Metrics` | `MetricsProviderInterface`, `MetricFamily`, `MetricSample`, `MetricType`, `MetricsCollector`, `PrometheusTextFormatter`, `ProbeMetricsProvider`. |
+| `Metrics` | `MetricsProviderInterface`, `MetricFamily`, `MetricSample`, `MetricType`, `MetricsCollector`, `PrometheusTextFormatter`, `ProbeMetricsProvider`, `MetricsTokenProviderInterface`. |
 | `Attribute` | `#[AsHealthProbe]`. |
 | `DependencyInjection` | `Configuration`, `NowoHealthKitExtension`, `Compiler\DoctrineProbePass`, `Compiler\HealthProbePass`. |
 
@@ -71,4 +71,5 @@ timestamp). No static state, no superglobal reads, no request data kept between 
 ## Extension points
 
 - Probes: `HealthProbeInterface` + `#[AsHealthProbe]` or the `nowo_health_kit.probe` tag.
+- Tokens: `DetailsTokenProviderInterface` / `MetricsTokenProviderInterface` (`*.token_provider`, resolved per request).
 - Metrics: `MetricsProviderInterface` (tag `nowo_health_kit.metrics_provider`, `priority` supported).

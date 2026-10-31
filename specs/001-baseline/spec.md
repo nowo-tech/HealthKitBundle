@@ -88,6 +88,7 @@ fail the compilation.
 - **FR-HTTP-003**: Health responses: JSON, GET/HEAD, stateless, `no-store, private`, `X-Robots-Tag: noindex`; 503 only on `error`.
 - **FR-HTTP-004**: `DetailsAccessPolicy` grants details for `details.public`, `REMOTE_ADDR` (or `getClientIp()` with `trust_forwarded_ip`) in `allowed_ips`, or a matching bearer token.
 - **FR-HTTP-005**: `BearerToken` reads only `Authorization: Bearer`, compares with `hash_equals()`, ignores tokens shorter than 16 chars.
+- **FR-HTTP-007**: `details.token_provider` / `metrics.token_provider` (`DetailsTokenProviderInterface`, `MetricsTokenProviderInterface`, both `TokenProviderInterface`) are resolved per request by `BearerToken::resolve()`, exclusive with the static token; null, short or throwing providers fail closed.
 - **FR-HTTP-006**: `/metrics` (`nowo_health_kit_metrics`): 404 disabled, 503 unconfigured, 401 + `WWW-Authenticate` unauthorized, 200 text 0.0.4 with token or a granted role (empty roles grant nobody).
 
 ### Probes and runner
@@ -120,7 +121,7 @@ fail the compilation.
 - **SC-002**: PHPStan level 8 with FrankenPHP rulesets, `ignoreErrors: []`, 0 errors; Igor 0 KO.
 - **SC-003**: `RoutesOptInTest` proves rule 7; `HealthEndpointsTest` proves US-1…US-6 in a real kernel.
 - **SC-004**: Demo Playwright e2e green (`make test-e2e`).
-- **SC-005**: Code inventory maps **32/32** production files (30 under `src/` + 2 route files under `config/routes/`).
+- **SC-005**: Code inventory maps **35/35** production files (33 under `src/` + 2 route files under `config/routes/`).
 
 ---
 

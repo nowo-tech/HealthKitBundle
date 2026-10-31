@@ -5,7 +5,7 @@
 **Last audited**: 2026-10-31
 
 Scope: every file under `src/` plus the shipped route imports under `config/routes/` (the bundle path is the package
-root). Audit command: `find src config -type f | wc -l` → **32**.
+root). Audit command: `find src config -type f | wc -l` → **35**.
 
 ## Bundle and dependency injection
 
@@ -32,7 +32,9 @@ root). Audit command: `find src config -type f | wc -l` → **32**.
 | `src/Controller/HealthController.php` | HTTP | FR-HTTP-001, FR-HTTP-002, FR-HTTP-003 |
 | `src/Controller/MetricsController.php` | HTTP | FR-HTTP-006 |
 | `src/Http/DetailsAccessPolicy.php` | HTTP | FR-HTTP-004 |
-| `src/Http/BearerToken.php` | HTTP | FR-HTTP-005 |
+| `src/Http/BearerToken.php` | HTTP | FR-HTTP-005, FR-HTTP-007 |
+| `src/Http/TokenProviderInterface.php` | HTTP | FR-HTTP-007 |
+| `src/Http/DetailsTokenProviderInterface.php` | HTTP | FR-HTTP-007 |
 
 ## Probes
 
@@ -68,6 +70,7 @@ root). Audit command: `find src config -type f | wc -l` → **32**.
 | `src/Metrics/PrometheusTextFormatter.php` | Metrics | FR-MET-002 |
 | `src/Metrics/MetricsCollector.php` | Metrics | FR-MET-003 |
 | `src/Metrics/ProbeMetricsProvider.php` | Metrics | FR-MET-004 |
+| `src/Metrics/MetricsTokenProviderInterface.php` | Metrics | FR-HTTP-007 |
 
 ## Coverage summary
 
@@ -75,8 +78,8 @@ root). Audit command: `find src config -type f | wc -l` → **32**.
 | --- | --- |
 | Bundle and dependency injection | 6 |
 | Routes | 2 |
-| HTTP layer | 4 |
+| HTTP layer | 6 |
 | Probes | 8 |
 | Runner | 5 |
-| Metrics | 7 |
-| **Total production sources** | **32 / 32** |
+| Metrics | 8 |
+| **Total production sources** | **35 / 35** |

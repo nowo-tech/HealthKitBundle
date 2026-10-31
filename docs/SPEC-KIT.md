@@ -206,7 +206,7 @@ find src config -type f | wc -l
 
 The **Total production sources** row in `code-inventory.md` must match this count.
 
-In **HealthKitBundle**, the baseline inventory covers **32/32** files (30 under `src/` + 2 route imports under `config/routes/`) — see [`specs/001-baseline/code-inventory.md`](../specs/001-baseline/code-inventory.md).
+In **HealthKitBundle**, the baseline inventory covers **35/35** files (33 under `src/` + 2 route imports under `config/routes/`) — see [`specs/001-baseline/code-inventory.md`](../specs/001-baseline/code-inventory.md).
 
 ---
 

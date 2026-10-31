@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\HealthKitBundle\Http;
 
 use Symfony\Component\HttpFoundation\Request;
+use Throwable;
 
 use function hash_equals;
 use function is_string;
@@ -59,5 +60,29 @@ final class BearerToken
         $provided = trim(substr($header, 7));
 
         return $provided !== '' && hash_equals((string) $expected, $provided);
+    }
+
+    /**
+     * Resolves the effective token: the provider's value when a provider is set, else the static token.
+     *
+     * A provider that throws is treated as "no token" (fail closed); the exception is swallowed without logging
+     * anything that could contain the token.
+     *
+     * @param string|null $token static token (`*.token`)
+     * @param TokenProviderInterface|null $provider runtime provider (`*.token_provider`)
+     *
+     * @return string|null the token for this request
+     */
+    public static function resolve(?string $token, ?TokenProviderInterface $provider): ?string
+    {
+        if (!$provider instanceof TokenProviderInterface) {
+            return $token;
+        }
+
+        try {
+            return $provider->getToken();
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

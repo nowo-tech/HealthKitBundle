@@ -6,6 +6,7 @@ namespace Nowo\HealthKitBundle\Controller;
 
 use Nowo\HealthKitBundle\Http\BearerToken;
 use Nowo\HealthKitBundle\Metrics\MetricsCollector;
+use Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -18,7 +19,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  * Routes are opt-in: import `@NowoHealthKitBundle/config/routes/metrics.yaml`. Access (fail closed):
  * - 404 when `metrics.enabled` is false;
  * - 503 when neither a usable token (≥ 16 chars) nor any role is configured;
- * - 200 with `Authorization: Bearer <metrics.token>` (constant-time compare; `?token=` is ignored), or for a session
+ * - 200 with `Authorization: Bearer <token>` (`metrics.token`, or `metrics.token_provider` resolved per scrape;
+ *   constant-time compare; `?token=` is ignored), or for a session
  *   granted one of `metrics.roles` (an empty roles list grants nobody);
  * - 401 with `WWW-Authenticate: Bearer` otherwise.
  */
@@ -31,6 +33,7 @@ final readonly class MetricsController
      * @param string|null $token `metrics.token`
      * @param list<string> $roles `metrics.roles` (empty: no role grants access)
      * @param AuthorizationCheckerInterface|null $authorization security checker (absent without SecurityBundle)
+     * @param MetricsTokenProviderInterface|null $tokenProvider runtime token source, resolved per scrape (replaces `$token`)
      */
     public function __construct(
         private MetricsCollector $collector,
@@ -39,6 +42,7 @@ final readonly class MetricsController
         private ?string $token = null,
         private array $roles = [],
         private ?AuthorizationCheckerInterface $authorization = null,
+        private ?MetricsTokenProviderInterface $tokenProvider = null,
     ) {
     }
 
@@ -55,10 +59,11 @@ final readonly class MetricsController
         if (!$this->enabled) {
             return $this->plain("not found\n", Response::HTTP_NOT_FOUND);
         }
-        if (!BearerToken::isConfigured($this->token) && $this->roles === []) {
+        $token = BearerToken::resolve($this->token, $this->tokenProvider);
+        if (!BearerToken::isConfigured($token) && $this->roles === []) {
             return $this->plain("metrics access not configured\n", Response::HTTP_SERVICE_UNAVAILABLE);
         }
-        if (!BearerToken::matches($request, $this->token) && !$this->grantedByRole()) {
+        if (!BearerToken::matches($request, $token) && !$this->grantedByRole()) {
             return $this->plain("unauthorized\n", Response::HTTP_UNAUTHORIZED, ['WWW-Authenticate' => 'Bearer realm="metrics"']);
         }
 

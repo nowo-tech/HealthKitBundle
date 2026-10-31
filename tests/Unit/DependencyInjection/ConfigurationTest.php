@@ -35,7 +35,7 @@ final class ConfigurationTest extends TestCase
         self::assertSame('', $config['version']);
         self::assertFalse($config['live']['expose_client_ip']);
         self::assertSame(5.0, $config['ready']['public_cache_ttl']);
-        self::assertSame(['public' => false, 'allowed_ips' => ['127.0.0.1', '::1'], 'token' => null, 'trust_forwarded_ip' => false], $config['details']);
+        self::assertSame(['public' => false, 'allowed_ips' => ['127.0.0.1', '::1'], 'token' => null, 'token_provider' => null, 'trust_forwarded_ip' => false], $config['details']);
         self::assertFalse($config['probes']['doctrine']['enabled']);
         self::assertFalse($config['probes']['redis']['enabled']);
         self::assertSame(1.0, $config['probes']['redis']['timeout']);
@@ -43,7 +43,18 @@ final class ConfigurationTest extends TestCase
         self::assertFalse($config['probes']['messenger']['critical']);
         self::assertTrue($config['probes']['frankenphp']['enabled']);
         self::assertSame(['live'], $config['probes']['frankenphp']['groups']);
-        self::assertSame(['enabled' => false, 'token' => null, 'roles' => [], 'probe_metrics' => true], $config['metrics']);
+        self::assertSame(['enabled' => false, 'token' => null, 'token_provider' => null, 'roles' => [], 'probe_metrics' => true], $config['metrics']);
+    }
+
+    #[Test]
+    public function providerAloneOrWithEmptyTokenIsAccepted(): void
+    {
+        $config = $this->process(['details' => ['token' => '', 'token_provider' => 'app.token'], 'metrics' => ['token_provider' => 'app.token']]);
+
+        self::assertSame('app.token', $config['details']['token_provider']);
+        self::assertNull($config['details']['token']);
+        self::assertSame('app.token', $config['metrics']['token_provider']);
+        self::assertSame([], $this->process(['metrics' => ['token' => 'x', 'token_provider' => '']])['metrics']['roles']);
     }
 
     #[Test]
@@ -90,6 +101,8 @@ final class ConfigurationTest extends TestCase
         yield 'empty groups' => [['probes' => ['frankenphp' => ['groups' => []]]], 'groups'];
         yield 'zero timeout' => [['probes' => ['redis' => ['timeout' => 0]]], 'greater than 0'];
         yield 'zero budget' => [['budget' => 0], 'budget'];
+        yield 'details token and provider' => [['details' => ['token' => 'x', 'token_provider' => 'app.token']], '"nowo_health_kit.details.token" and "nowo_health_kit.details.token_provider" are mutually exclusive'];
+        yield 'metrics token and provider' => [['metrics' => ['token' => 'x', 'token_provider' => 'app.token']], '"nowo_health_kit.metrics.token" and "nowo_health_kit.metrics.token_provider" are mutually exclusive'];
         yield 'unknown key' => [['probes' => ['mongo' => []]], 'Unrecognized option "mongo"'];
     }
 

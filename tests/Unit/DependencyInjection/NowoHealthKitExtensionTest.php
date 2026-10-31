@@ -82,6 +82,17 @@ final class NowoHealthKitExtensionTest extends TestCase
     }
 
     #[Test]
+    public function tokenProvidersAreWiredAsReferences(): void
+    {
+        $container = $this->load(['details' => ['token_provider' => 'app.settings_token'], 'metrics' => ['enabled' => true, 'token_provider' => 'app.settings_token']]);
+
+        self::assertEquals(new Reference('app.settings_token'), $container->getDefinition('nowo_health_kit.details_access_policy')->getArgument(4));
+        self::assertEquals(new Reference('app.settings_token'), $container->getDefinition(MetricsController::class)->getArgument(6));
+        self::assertNull($this->load()->getDefinition(MetricsController::class)->getArgument(6));
+        self::assertNull($this->load()->getDefinition('nowo_health_kit.details_access_policy')->getArgument(4));
+    }
+
+    #[Test]
     public function redisDsnProbeHasNoClient(): void
     {
         $container = $this->load(['probes' => ['redis' => ['enabled' => true, 'dsn' => 'redis://cache']]]);

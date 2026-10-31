@@ -28,7 +28,7 @@ services themselves.
 | Input | Where | Notes |
 | --- | --- | --- |
 | Anonymous HTTP `GET`/`HEAD` | `/health/live`, `/health/ready` (only when the host imports `config/routes/health.yaml`) | Status-only answer; readiness memoised per worker. |
-| `Authorization: Bearer` header | health details, `/metrics` | Compared in constant time against configured tokens (≥ 16 chars). |
+| `Authorization: Bearer` header | health details, `/metrics` | Compared in constant time against configured tokens (≥ 16 chars), static or returned per request by a token provider service. |
 | `REMOTE_ADDR` (or `getClientIp()` when `trust_forwarded_ip`) | health details | Matched against `details.allowed_ips`. |
 | Session roles | `/metrics` | Only when `metrics.roles` is not empty and SecurityBundle is installed. |
 | Configuration | `nowo_health_kit.*` | Validated at compile time; DSNs and tokens come from env vars. |
@@ -40,6 +40,7 @@ services themselves.
 | --- | --- |
 | **Information disclosure** (dependency names, hosts, versions, error messages) to the public | Public callers get the status only. Details require an allowlisted `REMOTE_ADDR` (loopback by default), a bearer token, or the explicit `details.public` dev switch. Exception messages are sanitized (DSN credentials and `password=`/`token=` pairs redacted, 300 chars max). |
 | **IP spoofing** through `X-Forwarded-For` to reach details | `REMOTE_ADDR` (TCP peer) is used by default; forwarded headers only with `details.trust_forwarded_ip: true`, which then relies on `framework.trusted_proxies`. |
+| **Runtime token providers** (`details.token_provider`, `metrics.token_provider`) | Resolved on every request (never cached by the bundle), so a revoked or rotated token stops working immediately, also in FrankenPHP worker mode. Mutually exclusive with the static token (compile error). A provider returning null, a token shorter than 16 characters, or throwing is treated as "no token" (fail closed: 401 / 503 / status-only); the exception is swallowed without logging, since it could contain the value. Same constant-time, header-only comparison. |
 | **Token brute force / timing attacks** | `hash_equals()`; tokens shorter than 16 characters are ignored (fail closed); only the `Authorization` header is read (no query string, so no leak into access logs, proxies or `Referer`). Rate limiting belongs to the host (reverse proxy or `symfony/rate-limiter`). |
 | **Unauthorized metrics scraping** | `/metrics` is disabled by default (404). Enabled without token or roles it answers 503. An empty roles list grants nobody (no "allow everyone" fallback). Missing SecurityBundle disables the role path. Wrong or missing token: 401 with `WWW-Authenticate`. |
 | **Denial of service** (hammering the database through `/health/ready`) | Anonymous readiness answers are memoised per worker (`ready.public_cache_ttl`, 5 s). Probes are bounded by per-probe timeouts and a group budget; one cheap query/command per dependency, no N+1. |
@@ -52,7 +53,7 @@ services themselves.
 
 ## Secrets and cryptography
 
-- Tokens (`details.token`, `metrics.token`) must come from env vars or Symfony secrets — never committed. The bundle
+- Tokens (`details.token`, `metrics.token`) must come from env vars or Symfony secrets — never committed. Tokens kept in application settings go through `*.token_provider` services; store them encrypted at rest when possible. The bundle
   never logs or echoes them. Generate them with a CSPRNG, e.g. `php -r 'echo bin2hex(random_bytes(24));'`.
 - No cryptography beyond constant-time comparison.
 - Demo tokens (`demo-*-token-change-me`) are placeholders for a local stack only.

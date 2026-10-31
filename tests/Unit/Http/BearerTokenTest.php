@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\HealthKitBundle\Tests\Unit\Http;
 
 use Nowo\HealthKitBundle\Http\BearerToken;
+use Nowo\HealthKitBundle\Tests\Fixtures\MutableTokenProvider;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -53,5 +54,14 @@ final class BearerTokenTest extends TestCase
         self::assertFalse(BearerToken::isConfigured(null));
         self::assertFalse(BearerToken::isConfigured('fifteen-chars!!'));
         self::assertTrue(BearerToken::isConfigured('sixteen-chars!!!'));
+    }
+
+    #[Test]
+    public function resolvePrefersTheProviderAndFailsClosed(): void
+    {
+        self::assertSame('static-token', BearerToken::resolve('static-token', null));
+        self::assertSame('runtime-token', BearerToken::resolve(null, new MutableTokenProvider('runtime-token')));
+        self::assertNull(BearerToken::resolve('static-token', new MutableTokenProvider()));
+        self::assertNull(BearerToken::resolve(null, new MutableTokenProvider('x', true)));
     }
 }
