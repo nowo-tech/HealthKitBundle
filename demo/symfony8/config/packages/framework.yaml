@@ -1,0 +1,10 @@
+# see https://symfony.com/doc/current/reference/configuration/framework.html
+framework:
+    secret: '%env(APP_SECRET)%'
+    session: false
+    # The demo page renders the bundle endpoints through sub-requests with the real controllers.
+    trusted_proxies: '%env(default::TRUSTED_PROXIES)%'
+
+when@test:
+    framework:
+        test: true

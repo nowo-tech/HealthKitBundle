@@ -1,0 +1,26 @@
+# NowoHealthKitBundle demo configuration (see docs/CONFIGURATION.md of the bundle).
+nowo_health_kit:
+    version: '%env(default::APP_VERSION)%'
+    live:
+        expose_client_ip: true
+    details:
+        # Loopback callers (Docker healthcheck, curl inside the container) and token holders see details.
+        token: '%env(HEALTH_DETAILS_TOKEN)%'
+    probes:
+        doctrine:
+            enabled: true
+            timeout: 2.0
+        redis:
+            enabled: true
+            dsn: '%env(REDIS_URL)%'
+            timeout: 0.5
+        messenger:
+            enabled: true
+            # Demo thresholds: `make seed-queue` enqueues 12 messages, so the queue shows as degraded.
+            transports:
+                async: { warn_at: 10, fail_at: 50 }
+        frankenphp:
+            groups: [live, ready]
+    metrics:
+        enabled: true
+        token: '%env(METRICS_TOKEN)%'

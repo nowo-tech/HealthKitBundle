@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{% block title %}Health Kit Bundle demo{% endblock %}</title>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><text y=%221.2em%22 font-size=%2296%22>💚</text></svg>">
+        {% block stylesheets %}
+            <style>
+                :root { --bg: #f5f7fb; --card: #fff; --ink: #1d2433; --muted: #5b6475; --line: #dde3ee; --ok: #1f9d55; --warn: #c27c0e; --err: #c0392b; --accent: #2457d6; }
+                * { box-sizing: border-box; }
+                body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+                header.masthead { position: sticky; top: 0; z-index: 10; background: #121a2b; color: #fff; padding: 14px 28px; display: flex; align-items: center; gap: 18px; }
+                header.masthead strong { font-size: 18px; }
+                header.masthead nav a { color: #c9d6ff; margin-right: 16px; text-decoration: none; font-size: 14px; }
+                header.masthead .badge { margin-left: auto; font-size: 12px; background: #2b3a5c; padding: 4px 10px; border-radius: 999px; }
+                main { max-width: 1320px; margin: 0 auto; padding: 24px 28px 80px; }
+                .lead { color: var(--muted); margin: 0 0 18px; }
+                .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+                .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+                .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+                .card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+                .pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: #fff; }
+                .pill.s200, .pill.ok { background: var(--ok); } .pill.degraded { background: var(--warn); } .pill.error { background: var(--err); } .pill.s401, .pill.s404 { background: var(--warn); } .pill.s503 { background: var(--err); }
+                pre { margin: 0; background: #0f1524; color: #d8e1f5; border-radius: 8px; padding: 12px 14px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: auto; max-height: 360px; }
+                table.checks { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
+                table.checks th, table.checks td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+                table.checks td.nowrap { white-space: nowrap; }
+                .st-ok { color: var(--ok); font-weight: 600; } .st-degraded { color: var(--warn); font-weight: 600; } .st-error { color: var(--err); font-weight: 600; }
+                code { background: #eef2fa; padding: 1px 5px; border-radius: 4px; }
+                .wide { grid-column: 1 / -1; }
+            </style>
+        {% endblock %}
+        {% block javascripts %}{% endblock %}
+    </head>
+    <body>
+        <header class="masthead">
+            <strong>Health Kit Bundle</strong>
+            <nav>
+                <a href="{{ path('demo_home') }}">Overview</a>
+                <a href="{{ path('nowo_health_kit_live') }}">/health/live</a>
+                <a href="{{ path('nowo_health_kit_ready') }}">/health/ready</a>
+                <a href="{{ path('nowo_health_kit_metrics') }}">/metrics</a>
+            </nav>
+            <span class="badge">Symfony 8.1 · FrankenPHP</span>
+        </header>
+        <main>
+            {% block body %}{% endblock %}
+        </main>
+    </body>
+</html>

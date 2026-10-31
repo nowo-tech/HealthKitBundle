@@ -1,0 +1,6 @@
+# Opt-in route import (REQ-SF-004 rule 7): the bundle exposes no route until it is imported here.
+nowo_health_kit_health:
+    resource: '@NowoHealthKitBundle/config/routes/health.yaml'
+
+nowo_health_kit_metrics:
+    resource: '@NowoHealthKitBundle/config/routes/metrics.yaml'

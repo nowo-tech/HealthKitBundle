@@ -1,0 +1,7 @@
+# NowoHealthKitBundle routes are opt-in. Health endpoints: /health/live and /health/ready.
+nowo_health_kit_health:
+    resource: '@NowoHealthKitBundle/config/routes/health.yaml'
+
+# Prometheus scrape endpoint (/metrics). Enable nowo_health_kit.metrics first, then uncomment:
+# nowo_health_kit_metrics:
+#     resource: '@NowoHealthKitBundle/config/routes/metrics.yaml'

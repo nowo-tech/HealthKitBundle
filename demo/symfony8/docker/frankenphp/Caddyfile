@@ -1,0 +1,32 @@
+{
+	order mercure after encode
+	skip_install_trust
+	# REQ-RUNTIME-001 timeout hierarchy: health budget (5 s, nowo_health_kit.budget) < PHP max_execution_time (20 s)
+	# < Caddy write timeout (30 s). max_wait_time caps the wait for a free PHP thread (503 instead of an endless queue).
+	servers {
+		timeouts {
+			write 30s
+		}
+	}
+	frankenphp {
+		php_ini max_execution_time 20
+		php_ini max_input_time 20
+		max_wait_time 10s
+	}
+}
+
+:80 {
+	root * /app/public
+	encode zstd br gzip
+	mercure {
+		anonymous
+	}
+
+	php_server {
+		hot_reload
+		worker {
+			file /app/public/index.php
+			watch
+		}
+	}
+}

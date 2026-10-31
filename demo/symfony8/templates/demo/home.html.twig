@@ -1,0 +1,47 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Health checks and metrics — Health Kit Bundle demo{% endblock %}
+
+{% macro response_card(title, intro, call, extra = '') %}
+    <section class="card {{ extra }}">
+        <h2>{{ title }} <span class="pill s{{ call.status }}">HTTP {{ call.status }}</span></h2>
+        <p>{{ intro|raw }}</p>
+        <pre>{{ call.body }}</pre>
+    </section>
+{% endmacro %}
+
+{% block body %}
+    <h1>Health checks and Prometheus metrics</h1>
+    <p class="lead">
+        Live output of the bundle endpoints, rendered through sub-requests: probes for Doctrine (MySQL), Redis,
+        the Messenger <code>async</code> queue, FrankenPHP and a host-defined disk probe.
+    </p>
+
+    {% set checks = detailed.decoded.checks|default({}) %}
+    <div class="grid">
+        <section class="card wide">
+            <h2>Readiness probes <span class="pill {{ detailed.decoded.status|default('error') }}">overall: {{ detailed.decoded.status|default('?') }}</span> <span class="pill s{{ detailed.status }}">HTTP {{ detailed.status }}</span></h2>
+            <p>What an allowlisted IP or a <code>Authorization: Bearer &lt;details.token&gt;</code> caller sees.</p>
+            <table class="checks">
+                <thead><tr><th>Probe</th><th>Status</th><th>Critical</th><th>Duration</th><th>Message / data</th></tr></thead>
+                <tbody>
+                {% for name, check in checks %}
+                    <tr>
+                        <td><code>{{ name }}</code></td>
+                        <td class="st-{{ check.status }} nowrap">{{ check.status }}</td>
+                        <td>{{ check.critical ? 'yes' : 'no' }}</td>
+                        <td class="nowrap">{{ check.duration_ms|number_format(2) }} ms</td>
+                        <td>{{ check.message|default('') }}{% if check.data is defined %} {{ check.data|json_encode }}{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        {{ _self.response_card('Public caller — GET /health/ready', 'Anonymous callers (here <code>203.0.113.10</code>) only get the status; the answer is memoised per worker for 5 s.', public) }}
+        {{ _self.response_card('Token caller — GET /health/live', 'Liveness with details: version, client IP and the FrankenPHP runtime snapshot.', live) }}
+        {{ _self.response_card('Scraper — GET /metrics', 'Bearer <code>metrics.token</code>: probe gauges plus the host providers (build info, page views in Redis).', metrics, 'wide') }}
+        {{ _self.response_card('No token — GET /metrics', 'Fail closed: no token or role, no metrics.', denied) }}
+        {{ _self.response_card('Detailed readiness JSON', 'Raw body of the token request shown in the table above.', detailed) }}
+    </div>
+{% endblock %}
