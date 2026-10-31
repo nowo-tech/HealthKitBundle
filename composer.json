@@ -1,0 +1,52 @@
+{
+    "name": "nowo-tech/health-kit-bundle",
+    "description": "Liveness and readiness endpoints with pluggable probes (Doctrine, Redis, Messenger queue depth, FrankenPHP) and a token-guarded Prometheus /metrics endpoint for Symfony apps.",
+    "type": "symfony-bundle",
+    "keywords": [
+        "symfony",
+        "symfony-bundle",
+        "bundle",
+        "health",
+        "healthcheck",
+        "readiness",
+        "liveness",
+        "prometheus",
+        "metrics",
+        "monitoring",
+        "nowo",
+        "frankenphp"
+    ],
+    "homepage": "https://github.com/nowo-tech/HealthKitBundle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Héctor Franco Aceituno",
+            "email": "hectorfranco@nowo.tech",
+            "homepage": "https://github.com/HecFranco",
+            "role": "Maintainer"
+        },
+        {
+            "name": "Nowo.tech",
+            "homepage": "https://nowo.tech"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/nowo-tech/HealthKitBundle/issues",
+        "source": "https://github.com/nowo-tech/HealthKitBundle",
+        "docs": "https://github.com/nowo-tech/HealthKitBundle/tree/main/docs",
+        "changelog": "https://github.com/nowo-tech/HealthKitBundle/blob/main/docs/CHANGELOG.md"
+    },
+    "require": {
+        "php": ">=8.2 <8.6",
+        "symfony/config": "^7.4 || ^8.0",
+        "symfony/dependency-injection": "^7.4 || ^8.0",
+        "symfony/http-kernel": "^7.4 || ^8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Nowo\\HealthKitBundle\\": "src/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
