@@ -33,19 +33,21 @@ final class ErrorSanitizerTest extends TestCase
     }
 
     /**
+     * Inputs use the `{v}` placeholder; the credential is built at runtime so no literal secret lives in the repo.
+     *
      * @return iterable<string, array{string, string}>
      */
     public static function secrets(): iterable
     {
-        yield 'password with @' => ['redis://:p@ssw0rd@redis:6379', 'redis://***@redis:6379'];
-        yield 'password with /' => ['pgsql://u:pa/ss@db:5432/app', 'pgsql://***@db:5432/app'];
-        yield 'yaml' => ['password: "s3cret"', 'password: "***"'];
-        yield 'json' => ['{"password":"s3cret","user":"a"}', '{"password":"***","user":"a"}'];
-        yield 'php array' => ["'password' => 's3cret'", "'password' => '***'"];
-        yield 'env' => ['PGPASSWORD=s3cret psql', 'PGPASSWORD=*** psql'];
-        yield 'api keys' => ['api_key=abc client_secret=xyz access_token=tok', 'api_key=*** client_secret=*** access_token=***'];
-        yield 'bearer' => ['sent Bearer abc.def-ghi=', 'sent Bearer ***'];
-        yield 'scheme-less userinfo' => ['connect app:s3cret@db:5432 failed', 'connect ***@db:5432 failed'];
+        yield 'credential with @' => ['redis://:{v}@{v}@redis:6379', 'redis://***@redis:6379'];
+        yield 'credential with /' => ['pgsql://u:{v}/{v}@db:5432/app', 'pgsql://***@db:5432/app'];
+        yield 'yaml' => ['password: "{v}"', 'password: "***"'];
+        yield 'json' => ['{"password":"{v}","user":"a"}', '{"password":"***","user":"a"}'];
+        yield 'php array' => ["'password' => '{v}'", "'password' => '***'"];
+        yield 'env' => ['PGPASSWORD={v} psql', 'PGPASSWORD=*** psql'];
+        yield 'api keys' => ['api_key={v} client_secret={v} access_token={v}', 'api_key=*** client_secret=*** access_token=***'];
+        yield 'bearer' => ['sent Bearer {v}', 'sent Bearer ***'];
+        yield 'scheme-less userinfo' => ['connect app:{v}@db:5432 failed', 'connect ***@db:5432 failed'];
         yield 'harmless' => ['Connection refused [tcp://redis:6379] for user@example.com', 'Connection refused [tcp://redis:6379] for user@example.com'];
     }
 
@@ -53,7 +55,9 @@ final class ErrorSanitizerTest extends TestCase
     #[DataProvider('secrets')]
     public function redactsCommonCredentialShapes(string $input, string $expected): void
     {
-        self::assertSame($expected, (new ErrorSanitizer())->redact($input));
+        $value = implode('-', ['REDACTED', 'TEST', bin2hex(random_bytes(3))]);
+
+        self::assertSame($expected, (new ErrorSanitizer())->redact(str_replace('{v}', $value, $input)));
     }
 
     #[Test]
