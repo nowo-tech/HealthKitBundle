@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\HealthKitBundle\Tests\Unit\Http;
 
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
+use Nowo\HealthKitBundle\Tests\Fixtures\MutableTokenProvider;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -62,5 +63,24 @@ final class DetailsAccessPolicyTest extends TestCase
     public function publicModeAllowsEverybody(): void
     {
         self::assertTrue((new DetailsAccessPolicy([], null, true))->allows($this->request('203.0.113.9')));
+    }
+
+    #[Test]
+    public function tokenProviderIsResolvedPerRequest(): void
+    {
+        $provider = new MutableTokenProvider(self::TOKEN);
+        $policy   = new DetailsAccessPolicy([], null, false, false, $provider);
+        $request  = $this->request('203.0.113.9', ['HTTP_AUTHORIZATION' => 'Bearer ' . self::TOKEN]);
+
+        self::assertTrue($policy->allows($request));
+        $provider->token = 'rotated-token-REDACTED-TEST';
+        self::assertFalse($policy->allows($request));
+        $provider->token = null;
+        self::assertFalse($policy->allows($request));
+        self::assertSame(3, $provider->calls);
+
+        // Allowlisted callers never hit the provider.
+        self::assertTrue((new DetailsAccessPolicy(['127.0.0.1'], null, false, false, $provider))->allows($this->request('127.0.0.1')));
+        self::assertSame(3, $provider->calls);
     }
 }

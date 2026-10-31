@@ -15,6 +15,7 @@ and invalid values fail the container compilation with the offending path in the
   - [messenger](#messenger)
   - [frankenphp](#frankenphp)
 - [metrics — Prometheus endpoint](#metrics--prometheus-endpoint)
+  - [Runtime token providers](#runtime-token-providers)
 - [Timeout hierarchy](#timeout-hierarchy)
 - [Environment-specific configuration](#environment-specific-configuration)
 - [Profiles](#profiles)
@@ -34,6 +35,7 @@ nowo_health_kit:
         public: false             # details for everybody (dev/test only)
         allowed_ips: ['127.0.0.1', '::1']
         token: null               # Authorization: Bearer <token>, >= 16 chars
+        token_provider: null      # service id of a DetailsTokenProviderInterface (exclusive with token)
         trust_forwarded_ip: false # match allowed_ips on getClientIp() instead of REMOTE_ADDR
     probes:
         doctrine:
@@ -64,6 +66,7 @@ nowo_health_kit:
     metrics:
         enabled: false
         token: null               # Authorization: Bearer <token>, >= 16 chars
+        token_provider: null      # service id of a MetricsTokenProviderInterface (exclusive with token)
         roles: []                 # session roles also allowed (empty = none)
         probe_metrics: true       # export probes as gauges
 ```
@@ -88,6 +91,7 @@ messages, data) when **one** of these holds:
 | `details.public` | `false` | Everybody sees details. Use only under `when@dev` / `when@test`. |
 | `details.allowed_ips` | `['127.0.0.1', '::1']` | `REMOTE_ADDR` matches an IP or CIDR (`10.0.0.0/8`, `fd00::/8`). Validated at compile time. An empty list disables the IP rule. |
 | `details.token` | `null` | `Authorization: Bearer <token>` matches (constant-time). Tokens shorter than 16 characters are ignored (fail closed). `?token=` query strings are never read. Empty string = `null`. |
+| `details.token_provider` | `null` | Service id of a `Nowo\HealthKitBundle\Http\DetailsTokenProviderInterface` whose `getToken(): ?string` is called per request (only when the caller is not already allowed by `public` / `allowed_ips`). For tokens editable at runtime. Mutually exclusive with `token` (configuration error when both are set). A null, short (< 16 chars) or throwing provider grants nothing. |
 | `details.trust_forwarded_ip` | `false` | Match `allowed_ips` against `Request::getClientIp()` (honours `framework.trusted_proxies`). Leave off unless every request goes through a trusted proxy: otherwise a client could claim `X-Forwarded-For: 127.0.0.1`. |
 
 ## probes — built-in probes
@@ -169,10 +173,37 @@ Probe `frankenphp` reports `sapi`, `frankenphp_mode` (`classic`/`worker`), `fran
 | --- | --- | --- |
 | `enabled` | `false` | Disabled: `/metrics` answers 404 (when its routes are imported). |
 | `token` | `null` | `Authorization: Bearer <token>`, ≥ 16 characters, constant-time compare, never logged. `?token=` is never read. |
+| `token_provider` | `null` | Service id of a `Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface`; `getToken(): ?string` is called on **every scrape** (no caching across requests), so a token edited in your settings applies immediately, also in FrankenPHP worker mode. Mutually exclusive with `token`. Same fail-closed rules: a null, short or throwing provider counts as "no token" (503 unless `roles` is set). |
 | `roles` | `[]` | Session roles also allowed (e.g. `ROLE_ADMIN`; needs `symfony/security-core`). An empty list grants nobody. |
 | `probe_metrics` | `true` | Export every probe as `health_probe_status{probe}` (1/0.5/0), `health_probe_duration_seconds{probe}` and `health_probe_data{probe,key}`. Probes run once per scrape. |
 
-With `enabled: true` and neither a usable token nor a role, the endpoint answers **503** (fail closed).
+With `enabled: true` and neither a usable token (static or from the provider) nor a role, the endpoint answers **503** (fail closed).
+
+### Runtime token providers
+
+```php
+use Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface;
+
+final readonly class SettingsMetricsToken implements MetricsTokenProviderInterface
+{
+    public function __construct(private OpsSettings $settings) {}
+
+    public function getToken(): ?string
+    {
+        return $this->settings->metricsToken(); // read per request; never log it
+    }
+}
+```
+
+```yaml
+nowo_health_kit:
+    metrics:
+        enabled: true
+        token_provider: App\Metrics\SettingsMetricsToken
+```
+
+The provider is called once per request that needs it; keep the lookup cheap (one settings read). If it throws, the
+bundle treats the token as missing and does not log the exception (it could carry the value).
 
 ## Timeout hierarchy
 

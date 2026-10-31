@@ -45,6 +45,7 @@ Apps that copied a `HealthController` / `MetricsController` (for example the Sym
 | Readiness checks the database and Redis (Redis skipped in test) | `probes.doctrine.enabled: true`, `probes.redis` (`when@test`: `enabled: false`) |
 | Public readiness memoised a few seconds per worker | `ready.public_cache_ttl` (default 5) |
 | `/metrics` with a bearer token (no `?token=`), 503 when required token is empty | `metrics.enabled`, `metrics.token`; 503 when neither token nor role is configured |
+| Metrics token editable at runtime (stored in settings) | `metrics.token_provider: <service implementing MetricsTokenProviderInterface>` (resolved on every scrape; exclusive with `metrics.token`) |
 | Developer role may scrape | `metrics.roles: [ROLE_DEVELOPER]` |
 | Collector service with app counters | Implement `MetricsProviderInterface` (autoconfigured) |
 | Prometheus formatter | `Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter` |

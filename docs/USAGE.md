@@ -13,6 +13,7 @@
   - [Kubernetes](#kubernetes)
   - [Docker Compose healthcheck](#docker-compose-healthcheck)
   - [Prometheus scrape config](#prometheus-scrape-config)
+- [Tokens stored in application settings](#tokens-stored-in-application-settings)
 - [Using the checker in your own code](#using-the-checker-in-your-own-code)
 - [Demo smoke](#demo-smoke)
 
@@ -201,6 +202,13 @@ scrape_configs:
       - targets: ['app.example:443']
     scheme: https
 ```
+
+## Tokens stored in application settings
+
+When operators edit the details or metrics token at runtime, implement `DetailsTokenProviderInterface` /
+`MetricsTokenProviderInterface` (`getToken(): ?string`) and point `details.token_provider` /
+`metrics.token_provider` at the service instead of `token`. The bundle calls it per request — see
+[CONFIGURATION.md](CONFIGURATION.md#runtime-token-providers).
 
 ## Using the checker in your own code
 

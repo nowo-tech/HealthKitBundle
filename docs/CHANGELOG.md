@@ -9,6 +9,7 @@ First release candidate (1.0.0), extracted and generalised from the Symfony Beac
 
 ### Added
 
+- `metrics.token_provider` and `details.token_provider`: service ids of a `MetricsTokenProviderInterface` / `DetailsTokenProviderInterface` (`getToken(): ?string`, common `Http\TokenProviderInterface`) resolved on every request, for tokens editable at runtime (e.g. stored in settings). Mutually exclusive with `metrics.token` / `details.token` (configuration error when both are set). Same fail-closed rules: a null, short (< 16 chars) or throwing provider counts as no token; header-only, constant-time comparison, never logged. `BearerToken::resolve()` helper.
 - `/health/live` and `/health/ready` (`HealthController`): JSON, `GET`/`HEAD`, stateless routes, `Cache-Control: no-store, private`, `X-Robots-Tag: noindex`; HTTP 200 for `ok`/`degraded`, 503 for `error`.
 - Opt-in routes: `@NowoHealthKitBundle/config/routes/health.yaml` and `metrics.yaml`; controllers are registered with `autoconfigure: false` so `routing.controllers` never exposes them (REQ-SF-004 rule 7, covered by a kernel test).
 - Details policy (`DetailsAccessPolicy`): status-only for public callers; probe names, durations, messages and data for `details.allowed_ips` (IPs/CIDRs, matched on `REMOTE_ADDR`, loopback by default), an `Authorization: Bearer` token (constant-time, ≥ 16 chars, never logged, query string ignored) or `details.public` (dev/test).

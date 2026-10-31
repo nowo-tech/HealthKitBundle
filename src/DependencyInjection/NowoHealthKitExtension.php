@@ -58,7 +58,7 @@ final class NowoHealthKitExtension extends Extension
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
-        /** @var array{default_timeout: float, budget: float, version: string, live: array{expose_client_ip: bool}, ready: array{public_cache_ttl: float}, details: array{public: bool, allowed_ips: list<string>, token: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, roles: list<string>, probe_metrics: bool}} $config */
+        /** @var array{default_timeout: float, budget: float, version: string, live: array{expose_client_ip: bool}, ready: array{public_cache_ttl: float}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
         $config = $this->processConfiguration(new Configuration(), $configs);
 
         $container->setParameter('nowo_health_kit.default_timeout', $config['default_timeout']);
@@ -96,6 +96,7 @@ final class NowoHealthKitExtension extends Extension
                 $config['details']['token'],
                 $config['details']['public'],
                 $config['details']['trust_forwarded_ip'],
+                $this->providerReference($config['details']['token_provider']),
             ]);
 
         $container->register('nowo_health_kit.frankenphp_runtime', FrankenPhpRuntime::class)
@@ -153,7 +154,7 @@ final class NowoHealthKitExtension extends Extension
         $live = $config['live'];
         /** @var array{public_cache_ttl: float} $ready */
         $ready = $config['ready'];
-        /** @var array{enabled: bool, token: string|null, roles: list<string>, probe_metrics: bool} $metrics */
+        /** @var array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool} $metrics */
         $metrics = $config['metrics'];
 
         $container->setDefinition(HealthController::class, (new Definition(HealthController::class))
@@ -193,10 +194,23 @@ final class NowoHealthKitExtension extends Extension
                 $metrics['token'],
                 $metrics['roles'],
                 new Reference('security.authorization_checker', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                $this->providerReference($metrics['token_provider']),
             ])
             ->setPublic(true)
             ->setAutoconfigured(false)
             ->addTag('controller.service_arguments'));
+    }
+
+    /**
+     * Reference to a token provider service, or null when none is configured.
+     *
+     * @param string|null $serviceId `*.token_provider`
+     *
+     * @return Reference|null provider reference (a missing service fails the compilation)
+     */
+    private function providerReference(?string $serviceId): ?Reference
+    {
+        return $serviceId === null || $serviceId === '' ? null : new Reference($serviceId);
     }
 
     /**

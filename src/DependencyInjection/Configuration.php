@@ -116,10 +116,18 @@ final class Configuration implements ConfigurationInterface
                             ->ifString()->then(static fn (string $v): ?string => $v === '' ? null : $v)
                         ->end()
                     ->end()
+                    ->scalarNode('token_provider')
+                        ->info('Service id of a DetailsTokenProviderInterface resolving the token per request (runtime-editable tokens). Mutually exclusive with token.')
+                        ->defaultNull()
+                    ->end()
                     ->booleanNode('trust_forwarded_ip')
                         ->info('Match allowed_ips against Request::getClientIp() (trusted proxies) instead of REMOTE_ADDR.')
                         ->defaultFalse()
                     ->end()
+                ->end()
+                ->validate()
+                    ->ifTrue(static fn (array $v): bool => self::bothTokenSources($v))
+                    ->thenInvalid('"nowo_health_kit.details.token" and "nowo_health_kit.details.token_provider" are mutually exclusive: set only one.')
                 ->end()
             ->end();
     }
@@ -239,6 +247,10 @@ final class Configuration implements ConfigurationInterface
                             ->ifString()->then(static fn (string $v): ?string => $v === '' ? null : $v)
                         ->end()
                     ->end()
+                    ->scalarNode('token_provider')
+                        ->info('Service id of a MetricsTokenProviderInterface resolving the token on every scrape (runtime-editable tokens). Mutually exclusive with token.')
+                        ->defaultNull()
+                    ->end()
                     ->arrayNode('roles')
                         ->info('Session roles also allowed to scrape (e.g. ROLE_ADMIN). Empty: no role grants access.')
                         ->scalarPrototype()->cannotBeEmpty()->end()
@@ -249,7 +261,23 @@ final class Configuration implements ConfigurationInterface
                         ->defaultTrue()
                     ->end()
                 ->end()
+                ->validate()
+                    ->ifTrue(static fn (array $v): bool => self::bothTokenSources($v))
+                    ->thenInvalid('"nowo_health_kit.metrics.token" and "nowo_health_kit.metrics.token_provider" are mutually exclusive: set only one.')
+                ->end()
             ->end();
+    }
+
+    /**
+     * Whether a node sets both a static token and a token provider.
+     *
+     * @param array<string, mixed> $node processed `details` or `metrics` node
+     *
+     * @return bool true when both are set
+     */
+    private static function bothTokenSources(array $node): bool
+    {
+        return ($node['token'] ?? null) !== null && ($node['token_provider'] ?? null) !== null && $node['token_provider'] !== '';
     }
 
     /**

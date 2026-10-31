@@ -6,8 +6,11 @@ namespace Nowo\HealthKitBundle\Tests\Integration\Kernel;
 
 use Nowo\HealthKitBundle\Tests\Fixtures\AutoNamedProbe;
 use Nowo\HealthKitBundle\Tests\Fixtures\CounterProvider;
+use Nowo\HealthKitBundle\Tests\Fixtures\MutableTokenProvider;
 use Nowo\HealthKitBundle\Tests\Fixtures\QueueProbe;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -166,5 +169,42 @@ final class HealthEndpointsTest extends KernelTestCase
         $kernel  = $this->bootKernel([]);
         $request = Request::create('/health/live', 'HEAD', server: ['REMOTE_ADDR' => '203.0.113.9']);
         self::assertSame(200, $kernel->handle($request)->getStatusCode());
+    }
+
+    #[Test]
+    public function runtimeTokenProvidersAreReadPerRequestWithoutReboot(): void
+    {
+        $kernel = $this->bootKernel(
+            [
+                'details' => ['token_provider' => 'app.settings_token'],
+                'metrics' => ['enabled' => true, 'token_provider' => 'app.settings_token'],
+            ],
+            [],
+            null,
+            ['app.settings_token' => MutableTokenProvider::class],
+        );
+        $testContainer = $kernel->getContainer()->get('test.service_container');
+        self::assertInstanceOf(ContainerInterface::class, $testContainer);
+        $provider = $testContainer->get('app.settings_token');
+        self::assertInstanceOf(MutableTokenProvider::class, $provider);
+
+        $bearer = ['HTTP_AUTHORIZATION' => 'Bearer ' . self::METRICS_TOKEN];
+        self::assertSame(503, $this->request($kernel, '/metrics', $bearer)->getStatusCode());
+        self::assertArrayNotHasKey('checks', $this->json($this->request($kernel, '/health/live', $bearer)));
+
+        $provider->token = self::METRICS_TOKEN;
+        self::assertSame(200, $this->request($kernel, '/metrics', $bearer)->getStatusCode());
+        self::assertArrayHasKey('checks', $this->json($this->request($kernel, '/health/live', $bearer)));
+
+        $provider->token = 'rotated-token-REDACTED-TEST';
+        self::assertSame(401, $this->request($kernel, '/metrics', $bearer)->getStatusCode());
+    }
+
+    #[Test]
+    public function bothTokenSourcesFailTheCompilation(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('mutually exclusive');
+        $this->bootKernel(['metrics' => ['token' => self::METRICS_TOKEN, 'token_provider' => 'app.settings_token']]);
     }
 }
