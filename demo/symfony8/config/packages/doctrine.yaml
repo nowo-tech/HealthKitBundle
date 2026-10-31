@@ -1,0 +1,6 @@
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        # Bound the connect time so the readiness probe cannot hang on an unreachable database.
+        options:
+            !php/const PDO::ATTR_TIMEOUT: 2

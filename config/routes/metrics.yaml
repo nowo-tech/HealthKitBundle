@@ -1,0 +1,8 @@
+# Prometheus scrape route of NowoHealthKitBundle (opt-in; REQ-SF-004 rule 7).
+# Import from the host: config/routes/nowo_health_kit.yaml
+#   nowo_health_kit_metrics:
+#       resource: '@NowoHealthKitBundle/config/routes/metrics.yaml'
+# Path: /metrics (nowo_health_kit_metrics). The endpoint answers 404 until nowo_health_kit.metrics.enabled is true.
+nowo_health_kit_metrics_controller:
+    resource: Nowo\HealthKitBundle\Controller\MetricsController
+    type: attribute

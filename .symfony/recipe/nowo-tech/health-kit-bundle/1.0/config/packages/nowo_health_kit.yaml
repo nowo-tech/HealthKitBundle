@@ -1,0 +1,27 @@
+# NowoHealthKitBundle — see https://github.com/nowo-tech/HealthKitBundle/blob/main/docs/CONFIGURATION.md
+# Safe defaults: public callers get {"status": ...} only; details for loopback callers or the bearer token;
+# /metrics disabled until you enable it and set a token.
+nowo_health_kit:
+    # version: '%env(default::APP_VERSION)%'
+    details:
+        token: '%env(default::HEALTH_DETAILS_TOKEN)%'
+    probes:
+        # doctrine:
+        #     enabled: true
+        # redis:
+        #     enabled: true
+        #     dsn: '%env(REDIS_URL)%'
+        # messenger:
+        #     enabled: true
+        #     transports:
+        #         async: { warn_at: 100, fail_at: 1000 }
+        frankenphp:
+            enabled: true
+    metrics:
+        enabled: false
+        token: '%env(default::METRICS_TOKEN)%'
+
+when@dev:
+    nowo_health_kit:
+        details:
+            public: true

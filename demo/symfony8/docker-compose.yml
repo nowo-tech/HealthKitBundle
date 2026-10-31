@@ -1,0 +1,73 @@
+name: health-kit-bundle-demo-symfony-8
+services:
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: health-kit-demo-symfony8-php
+    working_dir: /app
+    ports:
+      - "${PORT:-8197}:80"
+    volumes:
+      - .:/app
+      - ../..:/var/health-kit-bundle
+      - ./docker/frankenphp/Caddyfile.dev:/etc/frankenphp/Caddyfile.dev
+      - ./docker/php-dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+      - composer-cache:/root/.composer/cache
+    environment:
+      - COMPOSER_ALLOW_SUPERUSER=1
+      - APP_ENV=dev
+      - APP_DEBUG=1
+      - APP_SECRET=${APP_SECRET:-demo-secret}
+      - FRANKENPHP_MODE=${FRANKENPHP_MODE:-worker}
+    depends_on:
+      - database
+      - redis
+    # Docker healthcheck through the bundle (loopback caller inside the container).
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    # Mitigate Docker/WSL DNS failures resolving repo.packagist.org (composer curl error 6) — REQ-DEMO-009.
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    networks:
+      - health-kit-demo-network
+
+  # REQ-DEMO-006 / REQ-DEMO-011: MySQL for the Doctrine probe, reachable only on the Compose network (no host port).
+  database:
+    image: mysql:8.4
+    container_name: health-kit-demo-symfony8-db
+    environment:
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+      MYSQL_ROOT_PASSWORD: root
+    expose:
+      - "3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - health-kit-demo-network
+
+  # Redis for the Redis probe and the demo page-view counter (no host port).
+  redis:
+    image: redis:7-alpine
+    container_name: health-kit-demo-symfony8-redis
+    expose:
+      - "6379"
+    networks:
+      - health-kit-demo-network
+
+volumes:
+  composer-cache:
+    driver: local
+  db-data:
+    driver: local
+
+networks:
+  health-kit-demo-network:
+    driver: bridge

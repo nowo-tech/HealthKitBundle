@@ -1,0 +1,8 @@
+framework:
+    messenger:
+        transports:
+            # Doctrine transport: countable, so the health probe reports its depth. No worker consumes it in the
+            # demo, so seeded messages stay queued.
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+        routing:
+            App\Message\DemoJob: async

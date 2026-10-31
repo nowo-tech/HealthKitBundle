@@ -1,0 +1,8 @@
+# Liveness and readiness routes of NowoHealthKitBundle (opt-in; REQ-SF-004 rule 7).
+# Import from the host: config/routes/nowo_health_kit.yaml
+#   nowo_health_kit_health:
+#       resource: '@NowoHealthKitBundle/config/routes/health.yaml'
+# Paths: /health/live (nowo_health_kit_live), /health/ready (nowo_health_kit_ready). Add `prefix:` on the import to move them.
+nowo_health_kit_health_controller:
+    resource: Nowo\HealthKitBundle\Controller\HealthController
+    type: attribute

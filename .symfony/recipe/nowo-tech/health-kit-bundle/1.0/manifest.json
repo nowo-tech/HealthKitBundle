@@ -1,0 +1,14 @@
+{
+    "bundles": {
+        "Nowo\\HealthKitBundle\\NowoHealthKitBundle": ["all"]
+    },
+    "copy-from-recipe": {
+        "config/": "%CONFIG_DIR%/"
+    },
+    "env": {
+        "#1": "Bearer token unlocking health probe details (>= 16 chars). Generate: php -r 'echo bin2hex(random_bytes(24));'",
+        "HEALTH_DETAILS_TOKEN": "",
+        "#2": "Bearer token for /metrics scrapers (>= 16 chars). Only used when nowo_health_kit.metrics.enabled is true.",
+        "METRICS_TOKEN": ""
+    }
+}
