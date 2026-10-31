@@ -4,7 +4,7 @@
 
 > ⭐ **Found this useful?** [Install from Packagist](https://packagist.org/packages/nowo-tech/health-kit-bundle) · Give it a **star** on [GitHub](https://github.com/nowo-tech/HealthKitBundle) so more developers can find it.
 
-**Health Kit Bundle** — `/health/live` and `/health/ready` endpoints for orchestrators and load balancers, with pluggable probes (Doctrine DBAL per connection, Redis, Messenger queue depth with thresholds, FrankenPHP runtime, and your own tagged probes), per-probe timeouts, details only for allowlisted IPs or a bearer token, and a token-guarded Prometheus `/metrics` endpoint that aggregates your metrics providers. Tested on Symfony **7.4**, **8.0** and **8.1** · PHP 8.2+ (Symfony 8.x requires PHP 8.4+).
+**Health Kit Bundle** — `/health/live` and `/health/ready` endpoints for orchestrators and load balancers, with pluggable probes (Doctrine DBAL per connection, Redis, Messenger queue depth with thresholds, FrankenPHP runtime, and your own tagged probes), per-probe timeouts, details only for allowlisted IPs or a bearer token, and a token-guarded Prometheus `/metrics` endpoint that aggregates your metrics providers. Supports Symfony **7.4**, **8.0** and **8.1** (CI: 7.4 and 8.1; 8.0 is end-of-life) · PHP 8.2+ (Symfony 8.x requires PHP 8.4+).
 
 ![FrankenPHP Friendly Worker Mode](docs/images/frankenphp-friendly.png)
 
