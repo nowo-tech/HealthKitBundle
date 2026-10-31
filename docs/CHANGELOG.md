@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-31
+
+First release: liveness/readiness endpoints with pluggable probes (Doctrine, Redis, Messenger, FrankenPHP), allowlist/token-gated details, token-guarded Prometheus /metrics, runtime token providers. See [UPGRADING](UPGRADING.md#to-100).
+
 First release candidate (1.0.0), extracted and generalised from the Symfony Beacon health and metrics code.
 
 ### Security
