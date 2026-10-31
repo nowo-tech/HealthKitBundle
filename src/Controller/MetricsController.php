@@ -8,6 +8,7 @@ use Nowo\HealthKitBundle\Http\BearerToken;
 use Nowo\HealthKitBundle\Metrics\MetricsCollector;
 use Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -18,7 +19,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  *
  * Routes are opt-in: import `@NowoHealthKitBundle/config/routes/metrics.yaml`. Access (fail closed):
  * - 404 when `metrics.enabled` is false;
- * - 503 when neither a usable token (≥ 16 chars) nor any role is configured;
+ * - 503 when neither a usable token (≥ 16 chars) nor any role is configured (with a token provider, only answered
+ *   to requests carrying a bearer header — the provider is never called without one; anonymous requests get 401);
  * - 200 with `Authorization: Bearer <token>` (`metrics.token`, or `metrics.token_provider` resolved per scrape;
  *   constant-time compare; `?token=` is ignored), or for a session
  *   granted one of `metrics.roles` (an empty roles list grants nobody);
@@ -34,6 +36,7 @@ final readonly class MetricsController
      * @param list<string> $roles `metrics.roles` (empty: no role grants access)
      * @param AuthorizationCheckerInterface|null $authorization security checker (absent without SecurityBundle)
      * @param MetricsTokenProviderInterface|null $tokenProvider runtime token source, resolved per scrape (replaces `$token`)
+     * @param LoggerInterface|null $logger logger for token provider failures (class names only)
      */
     public function __construct(
         private MetricsCollector $collector,
@@ -43,6 +46,7 @@ final readonly class MetricsController
         private array $roles = [],
         private ?AuthorizationCheckerInterface $authorization = null,
         private ?MetricsTokenProviderInterface $tokenProvider = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -59,15 +63,41 @@ final readonly class MetricsController
         if (!$this->enabled) {
             return $this->plain("not found\n", Response::HTTP_NOT_FOUND);
         }
-        $token = BearerToken::resolve($this->token, $this->tokenProvider);
+        // Audit BX L3: without a bearer header a token provider is never called; such requests can only be granted by
+        // a role, so the answer is 401 (not the 503 "not configured", which would need the provider lookup).
+        if ($this->tokenProvider instanceof MetricsTokenProviderInterface && BearerToken::extract($request) === null) {
+            return $this->grantedByRole() ? $this->scrape() : $this->unauthorized();
+        }
+
+        $token = BearerToken::resolve($this->token, $this->tokenProvider, $this->logger);
         if (!BearerToken::isConfigured($token) && $this->roles === []) {
             return $this->plain("metrics access not configured\n", Response::HTTP_SERVICE_UNAVAILABLE);
         }
         if (!BearerToken::matches($request, $token) && !$this->grantedByRole()) {
-            return $this->plain("unauthorized\n", Response::HTTP_UNAUTHORIZED, ['WWW-Authenticate' => 'Bearer realm="metrics"']);
+            return $this->unauthorized();
         }
 
+        return $this->scrape();
+    }
+
+    /**
+     * Renders the scrape.
+     *
+     * @return Response Prometheus text 0.0.4
+     */
+    private function scrape(): Response
+    {
         return $this->plain($this->formatter->format($this->collector->collect()), Response::HTTP_OK, ['Content-Type' => PrometheusTextFormatter::CONTENT_TYPE]);
+    }
+
+    /**
+     * 401 answer with a Bearer challenge.
+     *
+     * @return Response plain-text 401
+     */
+    private function unauthorized(): Response
+    {
+        return $this->plain("unauthorized\n", Response::HTTP_UNAUTHORIZED, ['WWW-Authenticate' => 'Bearer realm="metrics"']);
     }
 
     /**

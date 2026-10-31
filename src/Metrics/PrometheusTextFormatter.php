@@ -9,13 +9,15 @@ use function floor;
 use function implode;
 use function is_infinite;
 use function is_nan;
+use function mb_scrub;
 use function str_replace;
 use function var_export;
 
 /**
  * Renders metric families in the Prometheus text exposition format 0.0.4.
  *
- * Help text escapes `\` and line feeds; label values escape `\`, `"` and line feeds; values render NaN / +Inf /
+ * Help text escapes `\` and line feeds; label values escape `\`, `"` and line feeds; both are scrubbed to valid UTF-8
+ * with carriage returns turned into (escaped) line feeds; values render NaN / +Inf /
  * -Inf, integers without a decimal part and other floats with full precision.
  */
 final class PrometheusTextFormatter
@@ -33,7 +35,7 @@ final class PrometheusTextFormatter
     {
         $lines = [];
         foreach ($families as $family) {
-            $lines[] = '# HELP ' . $family->name . ' ' . str_replace(['\\', "\n"], ['\\\\', '\\n'], $family->help);
+            $lines[] = '# HELP ' . $family->name . ' ' . str_replace(['\\', "\n"], ['\\\\', '\\n'], $this->clean($family->help));
             $lines[] = '# TYPE ' . $family->name . ' ' . $family->type->value;
             foreach ($family->samples as $sample) {
                 $lines[] = $family->name . $this->formatLabels($sample->labels) . ' ' . $this->formatValue($sample->value);
@@ -57,10 +59,23 @@ final class PrometheusTextFormatter
         }
         $parts = [];
         foreach ($labels as $name => $value) {
-            $parts[] = $name . '="' . str_replace(['\\', '"', "\n"], ['\\\\', '\\"', '\\n'], $value) . '"';
+            $parts[] = $name . '="' . str_replace(['\\', '"', "\n"], ['\\\\', '\\"', '\\n'], $this->clean($value)) . '"';
         }
 
         return '{' . implode(',', $parts) . '}';
+    }
+
+    /**
+     * Makes a help text or label value safe for the exposition format (audit BX I2): invalid UTF-8 sequences are
+     * replaced and carriage returns become line feeds (which are then escaped as `\n`).
+     *
+     * @param string $value raw text
+     *
+     * @return string valid UTF-8 without carriage returns
+     */
+    private function clean(string $value): string
+    {
+        return str_replace(["\r\n", "\r"], "\n", mb_scrub($value, 'UTF-8'));
     }
 
     /**

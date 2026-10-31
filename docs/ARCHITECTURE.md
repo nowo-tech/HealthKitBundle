@@ -29,7 +29,8 @@ HTTP ──► MetricsController ──► BearerToken / roles
 1. The host imports `config/routes/health.yaml` (and optionally `metrics.yaml`); nothing is routed otherwise.
 2. `/health/ready`: the controller asks `DetailsAccessPolicy` whether the caller may see details.
    - Detail callers: `HealthChecker::check('ready')` runs every `ready` probe and the detailed report is returned.
-   - Public callers: the memoised status is returned when younger than `ready.public_cache_ttl`, else the probes run
+   - Public callers: the memoised status (worker memo, then the `ready.cache_pool` PSR-6 pool) is returned when
+     younger than `ready.public_cache_ttl`, else the probes run
      and only `status` is returned.
 3. `HealthChecker` runs probes in name order: each gets its timeout; exceptions become sanitized errors; overruns
    become errors; once the group budget is spent the remaining probes are skipped (error); non-critical errors are

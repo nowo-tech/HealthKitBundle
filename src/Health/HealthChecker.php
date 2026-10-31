@@ -55,33 +55,44 @@ final readonly class HealthChecker
     public function check(string $group): HealthReport
     {
         $start   = $this->now();
+        $reports = $this->runWithinBudget($group, $start);
         $status  = HealthStatus::Ok;
-        $reports = [];
-
-        foreach ($this->probes as $probe) {
-            if (!$probe->inGroup($group)) {
-                continue;
-            }
-            $report = $this->now() - $start >= $this->budget
-                ? $this->skipped($probe)
-                : $this->run($probe);
-            $reports[] = $report;
-            $status    = $status->worst($report->status);
+        foreach ($reports as $report) {
+            $status = $status->worst($report->status);
         }
 
         return new HealthReport($group, $status, $reports, ($this->now() - $start) * 1000.0);
     }
 
     /**
-     * Runs every registered probe once, whatever its group (used by the probe metrics provider).
+     * Runs every registered probe once, whatever its group (used by the probe metrics provider), within the same
+     * budget as a group: probes not started in time are reported as errors (audit BX L2).
      *
      * @return list<ProbeReport> per-probe outcomes
      */
     public function checkAll(): array
     {
+        return $this->runWithinBudget(null, $this->now());
+    }
+
+    /**
+     * Runs the probes of a group (or all of them) and skips the remaining ones once the budget is spent.
+     *
+     * @param string|null $group `live`, `ready`, or null for every probe
+     * @param float $start time the run started (seconds)
+     *
+     * @return list<ProbeReport> per-probe outcomes
+     */
+    private function runWithinBudget(?string $group, float $start): array
+    {
         $reports = [];
         foreach ($this->probes as $probe) {
-            $reports[] = $this->run($probe);
+            if ($group !== null && !$probe->inGroup($group)) {
+                continue;
+            }
+            $reports[] = $this->now() - $start >= $this->budget
+                ? $this->skipped($probe)
+                : $this->run($probe);
         }
 
         return $reports;
@@ -98,10 +109,11 @@ final readonly class HealthChecker
     {
         $start = $this->now();
         try {
-            $result  = $probe->probe->check($probe->timeout);
-            $status  = $result->status;
-            $message = $result->message;
-            $data    = $result->data;
+            $result = $probe->probe->check($probe->timeout);
+            $status = $result->status;
+            // Audit BX L5: host probe messages and data reach detail callers, so they are redacted too.
+            $message = $result->message === null ? null : $this->sanitizer->redact($result->message);
+            $data    = $this->sanitizer->redactData($result->data);
         } catch (Throwable $e) {
             $status  = HealthStatus::Error;
             $message = $this->sanitizer->sanitize($e);
@@ -118,7 +130,7 @@ final readonly class HealthChecker
             $this->logger->warning('Health probe "{probe}" reported {status}.', [
                 'probe'  => $probe->name,
                 'status' => $status->value,
-                'reason' => $message === null ? null : $this->sanitizer->redact($message),
+                'reason' => $message,
             ]);
         }
 

@@ -59,7 +59,8 @@ A bundle safe under **B** is safe under **A**, classic mode and PHP-FPM.
 ## Findings
 
 No worker-mode findings under scenario **B**. The readiness memo is deliberate: it bounds the load anonymous traffic
-can put on dependencies (one probe run per worker per `ready.public_cache_ttl`). Each worker has its own memo, so
+can put on dependencies (one probe run per worker per `ready.public_cache_ttl`), and the `ready.cache_pool` PSR-6
+pool (default `cache.app`) shares the answer between workers and processes. Without the pool each worker has its own memo, so
 with N workers up to N runs happen per TTL window.
 
 ## Usage recommendations in worker mode

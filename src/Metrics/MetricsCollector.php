@@ -68,7 +68,7 @@ final readonly class MetricsCollector
                 if ($existing === null) {
                     $families[$family->name] = $family;
                 } elseif ($existing->type === $family->type) {
-                    $families[$family->name] = new MetricFamily($existing->name, $existing->type, $existing->help, [...$existing->samples, ...$family->samples]);
+                    $families[$family->name] = $this->merge($existing, $family, $provider);
                 } else {
                     $this->logger->warning('Metric "{metric}" from "{provider}" dropped: type mismatch.', [
                         'metric'   => $family->name,
@@ -84,6 +84,38 @@ final readonly class MetricsCollector
         }
 
         return $out;
+    }
+
+    /**
+     * Merges two same-type families; samples whose label set already exists are dropped (first provider wins).
+     *
+     * @param MetricFamily $existing family collected so far
+     * @param MetricFamily $family family from the current provider
+     * @param MetricsProviderInterface $provider current provider (for the log)
+     *
+     * @return MetricFamily merged family without duplicate series
+     */
+    private function merge(MetricFamily $existing, MetricFamily $family, MetricsProviderInterface $provider): MetricFamily
+    {
+        $samples = $existing->samples;
+        $seen    = [];
+        foreach ($samples as $sample) {
+            $seen[$sample->seriesKey()] = true;
+        }
+        foreach ($family->samples as $sample) {
+            if (isset($seen[$sample->seriesKey()])) {
+                $this->logger->warning('Duplicate series of metric "{metric}" from "{provider}" dropped.', [
+                    'metric'   => $family->name,
+                    'provider' => $provider::class,
+                ]);
+
+                continue;
+            }
+            $seen[$sample->seriesKey()] = true;
+            $samples[]                  = $sample;
+        }
+
+        return new MetricFamily($existing->name, $existing->type, $existing->help, $samples);
     }
 
     /**

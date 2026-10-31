@@ -6,11 +6,18 @@ namespace Nowo\HealthKitBundle\Controller;
 
 use Nowo\HealthKitBundle\Health\HealthChecker;
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Throwable;
+
+use function is_array;
+use function is_bool;
+use function is_float;
+use function is_string;
 
 /**
  * Liveness (`/health/live`) and readiness (`/health/ready`) endpoints for orchestrators and load balancers.
@@ -19,11 +26,16 @@ use Symfony\Component\Routing\Attribute\Route;
  * so `routing.controllers` never exposes it on its own). Public callers get `{"status": …}` only; callers allowed by
  * {@see DetailsAccessPolicy} also get probe names, durations, messages and data. Every response is `no-store`.
  *
- * Public readiness is memoised per PHP worker for `ready.public_cache_ttl` seconds so anonymous traffic cannot hammer
- * the database or Redis; the memo holds a status and a timestamp only (no request or user data).
+ * Public readiness is reused for `ready.public_cache_ttl` seconds so anonymous traffic cannot force a probe run per
+ * request: a per-worker memo (FrankenPHP worker mode) backed by a PSR-6 pool (`ready.cache_pool`, default `cache.app`)
+ * shared by every PHP process, so PHP-FPM and classic mode benefit too (audit BX L2). Both hold a status, a healthy
+ * flag and a timestamp only (no request or user data). Without a pool, FPM/classic processes run the probes on every
+ * anonymous request — rate-limit `/health/*` at the proxy then.
  */
 final class HealthController
 {
+    public const CACHE_KEY = 'nowo_health_kit.public_ready';
+
     /** @var array{at: float, healthy: bool, status: string}|null */
     private ?array $publicReady = null;
 
@@ -33,7 +45,8 @@ final class HealthController
      * @param ClockInterface $clock clock (public readiness memo)
      * @param string $version application version shown by `/health/live` (empty: hidden)
      * @param bool $exposeClientIp include the caller IP (trusted proxies applied) in `/health/live`
-     * @param float $publicCacheTtl seconds the public readiness answer is reused (0 disables the memo)
+     * @param float $publicCacheTtl seconds the public readiness answer is reused (0 disables memo and pool)
+     * @param CacheItemPoolInterface|null $publicCache shared pool for the public readiness answer (null: worker memo only)
      */
     public function __construct(
         private readonly HealthChecker $checker,
@@ -42,6 +55,7 @@ final class HealthController
         private readonly string $version = '',
         private readonly bool $exposeClientIp = false,
         private readonly float $publicCacheTtl = 5.0,
+        private readonly ?CacheItemPoolInterface $publicCache = null,
     ) {
     }
 
@@ -83,14 +97,76 @@ final class HealthController
             return $this->respond($report->toDetailedArray(), $report->isHealthy());
         }
 
-        $now = (float) $this->clock->now()->format('U.u');
-        if ($this->publicReady === null || $this->publicCacheTtl <= 0.0 || $now - $this->publicReady['at'] >= $this->publicCacheTtl) {
+        $now    = (float) $this->clock->now()->format('U.u');
+        $answer = $this->cachedPublicReady($now);
+        if ($answer === null) {
             $report = $this->checker->check('ready');
-            // @igor-ignore - Per-worker memo of the anonymous readiness answer (status + timestamp, no request or user data).
-            $this->publicReady = ['at' => $now, 'healthy' => $report->isHealthy(), 'status' => $report->status->value];
+            $answer = ['at' => $now, 'healthy' => $report->isHealthy(), 'status' => $report->status->value];
+            $this->storePublicReady($answer);
         }
 
-        return $this->respond(['status' => $this->publicReady['status']], $this->publicReady['healthy']);
+        return $this->respond(['status' => $answer['status']], $answer['healthy']);
+    }
+
+    /**
+     * Fresh public readiness answer from the worker memo or the shared pool.
+     *
+     * @param float $now current time (seconds)
+     *
+     * @return array{at: float, healthy: bool, status: string}|null the answer, or null when none is fresh
+     */
+    private function cachedPublicReady(float $now): ?array
+    {
+        if ($this->publicCacheTtl <= 0.0) {
+            return null;
+        }
+        if ($this->publicReady !== null && $now - $this->publicReady['at'] < $this->publicCacheTtl) {
+            return $this->publicReady;
+        }
+        if (!$this->publicCache instanceof CacheItemPoolInterface) {
+            return null;
+        }
+
+        try {
+            $value = $this->publicCache->getItem(self::CACHE_KEY)->get();
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($value) || !is_float($value['at'] ?? null) || !is_bool($value['healthy'] ?? null) || !is_string($value['status'] ?? null)
+            || $now - $value['at'] >= $this->publicCacheTtl || $now < $value['at']) {
+            return null;
+        }
+        $answer = ['at' => $value['at'], 'healthy' => $value['healthy'], 'status' => $value['status']];
+        // @igor-ignore - Per-worker memo of the anonymous readiness answer (status + timestamp, no request or user data).
+        $this->publicReady = $answer;
+
+        return $answer;
+    }
+
+    /**
+     * Stores the public readiness answer in the worker memo and the shared pool.
+     *
+     * @param array{at: float, healthy: bool, status: string} $answer answer to store
+     */
+    private function storePublicReady(array $answer): void
+    {
+        if ($this->publicCacheTtl <= 0.0) {
+            return;
+        }
+        // @igor-ignore - Per-worker memo of the anonymous readiness answer (status + timestamp, no request or user data).
+        $this->publicReady = $answer;
+        if (!$this->publicCache instanceof CacheItemPoolInterface) {
+            return;
+        }
+
+        try {
+            $item = $this->publicCache->getItem(self::CACHE_KEY);
+            $item->set($answer);
+            $item->expiresAfter(max(1, (int) ceil($this->publicCacheTtl)));
+            $this->publicCache->save($item);
+        } catch (Throwable) {
+            // A broken pool only costs the shared memo; the answer itself is unaffected.
+        }
     }
 
     /**

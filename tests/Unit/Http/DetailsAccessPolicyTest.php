@@ -6,10 +6,13 @@ namespace Nowo\HealthKitBundle\Tests\Unit\Http;
 
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
 use Nowo\HealthKitBundle\Tests\Fixtures\MutableTokenProvider;
+use Nowo\HealthKitBundle\Tests\Fixtures\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+
+use const JSON_THROW_ON_ERROR;
 
 #[CoversClass(DetailsAccessPolicy::class)]
 final class DetailsAccessPolicyTest extends TestCase
@@ -82,5 +85,43 @@ final class DetailsAccessPolicyTest extends TestCase
         // Allowlisted callers never hit the provider.
         self::assertTrue((new DetailsAccessPolicy(['127.0.0.1'], null, false, false, $provider))->allows($this->request('127.0.0.1')));
         self::assertSame(3, $provider->calls);
+    }
+
+    #[Test]
+    public function proxiedRequestsCannotUseTheIpAllowlist(): void
+    {
+        $policy = new DetailsAccessPolicy(['127.0.0.1', '::1'], self::TOKEN);
+
+        foreach (['HTTP_X_FORWARDED_FOR' => '203.0.113.7', 'HTTP_FORWARDED' => 'for=203.0.113.7', 'HTTP_X_REAL_IP' => '203.0.113.7'] as $header => $value) {
+            self::assertFalse($policy->allows($this->request('127.0.0.1', [$header => $value])), $header);
+            self::assertTrue($policy->allows($this->request('127.0.0.1', [$header => $value, 'HTTP_AUTHORIZATION' => 'Bearer ' . self::TOKEN])), $header);
+        }
+        self::assertTrue($policy->allows($this->request('127.0.0.1')));
+        self::assertFalse(DetailsAccessPolicy::isProxied($this->request('127.0.0.1')));
+    }
+
+    #[Test]
+    public function tokenProviderIsNotCalledWithoutBearerHeader(): void
+    {
+        $provider = new MutableTokenProvider(self::TOKEN);
+        $policy   = new DetailsAccessPolicy([], null, false, false, $provider);
+
+        for ($i = 0; $i < 5; ++$i) {
+            self::assertFalse($policy->allows($this->request('203.0.113.9')));
+            self::assertFalse($policy->allows($this->request('203.0.113.9', ['HTTP_AUTHORIZATION' => 'Basic abc'])));
+        }
+        self::assertSame(0, $provider->calls);
+    }
+
+    #[Test]
+    public function throwingProviderIsLoggedWithoutTheToken(): void
+    {
+        $logger = new RecordingLogger();
+        $policy = new DetailsAccessPolicy([], null, false, false, new MutableTokenProvider(self::TOKEN, true), $logger);
+
+        self::assertFalse($policy->allows($this->request('203.0.113.9', ['HTTP_AUTHORIZATION' => 'Bearer ' . self::TOKEN])));
+        self::assertCount(1, $logger->records);
+        self::assertSame(MutableTokenProvider::class, $logger->records[0]['context']['provider']);
+        self::assertStringNotContainsString(self::TOKEN, json_encode($logger->records, JSON_THROW_ON_ERROR));
     }
 }

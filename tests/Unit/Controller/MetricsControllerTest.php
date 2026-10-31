@@ -9,6 +9,7 @@ use Nowo\HealthKitBundle\Metrics\MetricsCollector;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
 use Nowo\HealthKitBundle\Tests\Fixtures\CounterProvider;
 use Nowo\HealthKitBundle\Tests\Fixtures\MutableTokenProvider;
+use Nowo\HealthKitBundle\Tests\Fixtures\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -16,6 +17,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 use function in_array;
+
+use const JSON_THROW_ON_ERROR;
 
 #[CoversClass(MetricsController::class)]
 final class MetricsControllerTest extends TestCase
@@ -107,5 +110,33 @@ final class MetricsControllerTest extends TestCase
 
         $withRole = new MetricsController(new MetricsCollector([new CounterProvider()]), new PrometheusTextFormatter(), true, null, ['ROLE_OPS'], $this->auth(['ROLE_OPS']), new MutableTokenProvider());
         self::assertSame(200, $withRole(Request::create('/metrics'))->getStatusCode());
+    }
+
+    #[Test]
+    public function providerIsNotCalledWithoutBearerHeader(): void
+    {
+        $provider = new MutableTokenProvider(self::TOKEN);
+        $request  = Request::create('/metrics');
+
+        $anonymous = new MetricsController(new MetricsCollector([new CounterProvider()]), new PrometheusTextFormatter(), true, null, [], null, $provider);
+        $denied    = $anonymous($request);
+        self::assertSame(401, $denied->getStatusCode());
+        self::assertSame('Bearer realm="metrics"', $denied->headers->get('WWW-Authenticate'));
+
+        $withRole = new MetricsController(new MetricsCollector([new CounterProvider()]), new PrometheusTextFormatter(), true, null, ['ROLE_OPS'], $this->auth(['ROLE_OPS']), $provider);
+        self::assertSame(200, $withRole($request)->getStatusCode());
+        self::assertSame(0, $provider->calls);
+    }
+
+    #[Test]
+    public function throwingProviderIsLoggedWithoutTheToken(): void
+    {
+        $logger     = new RecordingLogger();
+        $controller = new MetricsController(new MetricsCollector([new CounterProvider()]), new PrometheusTextFormatter(), true, null, [], null, new MutableTokenProvider(self::TOKEN, true), $logger);
+
+        self::assertSame(503, $controller(Request::create('/metrics', server: ['HTTP_AUTHORIZATION' => 'Bearer ' . self::TOKEN]))->getStatusCode());
+        self::assertCount(1, $logger->records);
+        self::assertSame('RuntimeException', $logger->records[0]['context']['error_class']);
+        self::assertStringNotContainsString(self::TOKEN, json_encode($logger->records, JSON_THROW_ON_ERROR));
     }
 }

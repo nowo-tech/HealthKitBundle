@@ -66,4 +66,27 @@ final class MetricsCollectorTest extends TestCase
     {
         return new RecordingLogger();
     }
+
+    #[Test]
+    public function duplicateSeriesAcrossProvidersKeepTheFirst(): void
+    {
+        $logger = $this->logger();
+        $a      = new class implements MetricsProviderInterface {
+            public function collect(): iterable
+            {
+                yield new MetricFamily('jobs', MetricType::Gauge, 'Jobs', [new MetricSample(1, ['q' => 'a'])]);
+            }
+        };
+        $b = new class implements MetricsProviderInterface {
+            public function collect(): iterable
+            {
+                yield new MetricFamily('jobs', MetricType::Gauge, 'Jobs', [new MetricSample(9, ['q' => 'a']), new MetricSample(2, ['q' => 'b'])]);
+            }
+        };
+
+        $jobs = (new MetricsCollector([$a, $b], $logger))->collect()[0];
+
+        self::assertSame([[['q' => 'a'], 1.0], [['q' => 'b'], 2.0]], array_map(static fn (MetricSample $s): array => [$s->labels, $s->value], $jobs->samples));
+        self::assertCount(1, $logger->records);
+    }
 }

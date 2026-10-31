@@ -41,9 +41,9 @@ Apps that copied a `HealthController` / `MetricsController` (for example the Sym
 | In-app behaviour | Bundle equivalent |
 | --- | --- |
 | `/health/live` returns `status`, `version`, `client_ip` | `version: '%env(...)%'`, `live.expose_client_ip: true` |
-| Details only for loopback callers in prod, everybody outside prod | `details.allowed_ips` (loopback default) + `when@dev` / `when@test`: `details.public: true` |
+| Details only for loopback callers in prod, everybody outside prod | `details.allowed_ips` (loopback default; requests with forwarding headers are not matched) + `when@dev` / `when@test`: `details.public: true`. If a proxy on the same host connects over loopback without forwarding headers, use `allowed_ips: []` + token |
 | Readiness checks the database and Redis (Redis skipped in test) | `probes.doctrine.enabled: true`, `probes.redis` (`when@test`: `enabled: false`) |
-| Public readiness memoised a few seconds per worker | `ready.public_cache_ttl` (default 5) |
+| Public readiness memoised a few seconds per worker | `ready.public_cache_ttl` (default 5) + `ready.cache_pool` (default `cache.app`, shared across processes) |
 | `/metrics` with a bearer token (no `?token=`), 503 when required token is empty | `metrics.enabled`, `metrics.token`; 503 when neither token nor role is configured |
 | Metrics token editable at runtime (stored in settings) | `metrics.token_provider: <service implementing MetricsTokenProviderInterface>` (resolved on every scrape; exclusive with `metrics.token`) |
 | Developer role may scrape | `metrics.roles: [ROLE_DEVELOPER]` |

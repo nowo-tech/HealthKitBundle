@@ -40,6 +40,7 @@
     },
     "require": {
         "php": ">=8.2 <8.6",
+        "psr/cache": "^2.0 || ^3.0",
         "psr/clock": "^1.0",
         "psr/log": "^2.0 || ^3.0",
         "symfony/clock": "^7.4 || ^8.0",
@@ -47,6 +48,7 @@
         "symfony/dependency-injection": "^7.4 || ^8.0",
         "symfony/http-foundation": "^7.4 || ^8.0",
         "symfony/http-kernel": "^7.4 || ^8.0",
+        "symfony/polyfill-mbstring": "^1.31",
         "symfony/routing": "^7.4 || ^8.0"
     },
     "require-dev": {
@@ -59,6 +61,7 @@
         "phpstan/phpstan": "^2.0",
         "phpstan/phpstan-symfony": "^2.0",
         "phpunit/phpunit": "^11.5",
+        "predis/predis": "^2.2 || ^3.0",
         "rector/rector": "^2.0",
         "symfony/cache": "^7.4 || ^8.0",
         "symfony/framework-bundle": "^7.4 || ^8.0",
@@ -72,7 +75,8 @@
         "symfony/cache": "Opens Redis connections from a DSN for the redis probe (probes.redis.dsn); not needed with probes.redis.client",
         "symfony/messenger": "Enables the messenger.<transport> queue-depth probes (probes.messenger)",
         "symfony/security-core": "Lets session roles scrape /metrics (metrics.roles)",
-        "symfony/flex": "Installs the recipe (config/packages/nowo_health_kit.yaml and the health route import)"
+        "symfony/flex": "Installs the recipe (config/packages/nowo_health_kit.yaml and the health route import)",
+        "predis/predis": "Redis client usable by the redis probe (DSN or client service) when ext-redis / ext-relay are not installed"
     },
     "autoload": {
         "psr-4": {

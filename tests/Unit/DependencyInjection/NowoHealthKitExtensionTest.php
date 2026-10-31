@@ -17,6 +17,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Reference;
 
 #[CoversClass(NowoHealthKitExtension::class)]
@@ -112,5 +113,20 @@ final class NowoHealthKitExtensionTest extends TestCase
         $definition   = new ChildDefinition('');
         $configurator($definition, new AsHealthProbe('payments_api', ['ready'], false, 1.5), new ReflectionClass(QueueProbe::class));
         self::assertSame([['name' => 'payments_api', 'groups' => ['ready'], 'critical' => false, 'timeout' => 1.5]], $definition->getTag(NowoHealthKitExtension::PROBE_TAG));
+    }
+
+    #[Test]
+    public function publicReadinessPoolAndLoggersAreWired(): void
+    {
+        $default = $this->load();
+        $pool    = $default->getDefinition(HealthController::class)->getArgument(6);
+        self::assertInstanceOf(Reference::class, $pool);
+        self::assertSame('cache.app', (string) $pool);
+        self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $pool->getInvalidBehavior());
+        self::assertSame('logger', (string) $default->getDefinition('nowo_health_kit.details_access_policy')->getArgument(5));
+        self::assertSame('logger', (string) $default->getDefinition(MetricsController::class)->getArgument(7));
+
+        self::assertNull($this->load(['ready' => ['cache_pool' => null]])->getDefinition(HealthController::class)->getArgument(6));
+        self::assertNull($this->load(['ready' => ['cache_pool' => '']])->getDefinition(HealthController::class)->getArgument(6));
     }
 }

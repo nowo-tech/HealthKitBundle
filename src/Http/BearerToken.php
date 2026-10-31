@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\HealthKitBundle\Http;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 
@@ -53,27 +54,45 @@ final class BearerToken
             return false;
         }
 
+        $provided = self::extract($request);
+
+        return $provided !== null && hash_equals((string) $expected, $provided);
+    }
+
+    /**
+     * Extracts the bearer token from the `Authorization` header (never from the query string).
+     *
+     * Callers use it to skip token providers entirely when the request carries no bearer token, so anonymous
+     * traffic never triggers a provider lookup.
+     *
+     * @param Request $request incoming request
+     *
+     * @return string|null the non-empty token, or null when the header is missing, empty or not a Bearer scheme
+     */
+    public static function extract(Request $request): ?string
+    {
         $header = $request->headers->get('Authorization');
         if (!is_string($header) || strncasecmp($header, 'Bearer ', 7) !== 0) {
-            return false;
+            return null;
         }
         $provided = trim(substr($header, 7));
 
-        return $provided !== '' && hash_equals((string) $expected, $provided);
+        return $provided === '' ? null : $provided;
     }
 
     /**
      * Resolves the effective token: the provider's value when a provider is set, else the static token.
      *
-     * A provider that throws is treated as "no token" (fail closed); the exception is swallowed without logging
-     * anything that could contain the token.
+     * A provider that throws is treated as "no token" (fail closed). The failure is logged as a warning with the
+     * provider and exception class names only — never the message, which could contain the token.
      *
      * @param string|null $token static token (`*.token`)
      * @param TokenProviderInterface|null $provider runtime provider (`*.token_provider`)
+     * @param LoggerInterface|null $logger logger for provider failures
      *
      * @return string|null the token for this request
      */
-    public static function resolve(?string $token, ?TokenProviderInterface $provider): ?string
+    public static function resolve(?string $token, ?TokenProviderInterface $provider, ?LoggerInterface $logger = null): ?string
     {
         if (!$provider instanceof TokenProviderInterface) {
             return $token;
@@ -81,7 +100,12 @@ final class BearerToken
 
         try {
             return $provider->getToken();
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            $logger?->warning('Health kit token provider "{provider}" failed ({error_class}); access denied.', [
+                'provider'    => $provider::class,
+                'error_class' => $e::class,
+            ]);
+
             return null;
         }
     }

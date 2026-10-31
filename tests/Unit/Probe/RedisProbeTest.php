@@ -10,6 +10,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Predis\ClientInterface as PredisClientInterface;
+use Predis\Response\Status;
 use RuntimeException;
 use stdClass;
 use Stringable;
@@ -121,5 +123,49 @@ final class RedisProbeTest extends TestCase
     {
         $this->expectException(Throwable::class);
         (new RedisProbe(null, 'redis://127.0.0.1:1'))->check(0.2);
+    }
+
+    #[Test]
+    public function predisClientsAreDisconnectedNotClosed(): void
+    {
+        $client = $this->createMock(PredisClientInterface::class);
+        $client->method('__call')->willReturnCallback(static fn (string $method): mixed => $method === 'ping' ? new Status('PONG') : throw new RuntimeException('Command `CLOSE` is not a registered Redis command.'));
+        $client->expects(self::once())->method('disconnect');
+
+        self::assertSame(HealthStatus::Ok, (new RedisProbe(null, 'redis://cache', static fn (): object => $client))->check(0.5)->status);
+    }
+
+    #[Test]
+    public function aFailingCloseNeverMasksTheOutcome(): void
+    {
+        $client = new class {
+            public function ping(): bool
+            {
+                return true;
+            }
+
+            public function close(): never
+            {
+                throw new RuntimeException('close failed');
+            }
+        };
+
+        self::assertSame(HealthStatus::Ok, (new RedisProbe(null, 'redis://cache', static fn (): object => $client))->check(0.5)->status);
+    }
+
+    #[Test]
+    public function ownedClientWithoutPingIsClosedToo(): void
+    {
+        $client = new class {
+            public bool $closed = false;
+
+            public function close(): void
+            {
+                $this->closed = true;
+            }
+        };
+
+        self::assertSame('The Redis client does not support PING.', (new RedisProbe(null, 'redis://cache', static fn (): object => $client))->check(0.5)->message);
+        self::assertTrue($client->closed);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\HealthKitBundle\Http;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -20,15 +21,25 @@ use function is_string;
  *
  * The peer address is `REMOTE_ADDR` (the TCP peer), not `X-Forwarded-For`, unless `details.trust_forwarded_ip` is
  * enabled: a reverse proxy client must not be able to claim a loopback address.
+ *
+ * Proxied requests (audit BX L1): with `trust_forwarded_ip` off, a request carrying `Forwarded`, `X-Forwarded-For` or
+ * `X-Real-IP` came through a proxy, so `REMOTE_ADDR` is the proxy (often loopback on the same host/pod), not the
+ * client. The IP allowlist is then ignored; only the token can grant details.
+ *
+ * Token providers are only called when the request carries a bearer token (audit BX L3).
  */
 final readonly class DetailsAccessPolicy
 {
+    /** @var list<string> */
+    public const FORWARDING_HEADERS = ['Forwarded', 'X-Forwarded-For', 'X-Real-IP'];
+
     /**
      * @param list<string> $allowedIps IPs / CIDRs allowed to see details
      * @param string|null $token bearer token granting details (null or shorter than 16 chars: disabled)
      * @param bool $public show details to everybody (dev/test only)
      * @param bool $trustForwardedIp use {@see Request::getClientIp()} (trusted proxies) instead of REMOTE_ADDR
      * @param DetailsTokenProviderInterface|null $tokenProvider runtime token source, resolved per request (replaces `$token`)
+     * @param LoggerInterface|null $logger logger for token provider failures (class names only)
      */
     public function __construct(
         private array $allowedIps = ['127.0.0.1', '::1'],
@@ -36,6 +47,7 @@ final readonly class DetailsAccessPolicy
         private bool $public = false,
         private bool $trustForwardedIp = false,
         private ?DetailsTokenProviderInterface $tokenProvider = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -52,11 +64,35 @@ final readonly class DetailsAccessPolicy
             return true;
         }
 
-        $ip = $this->trustForwardedIp ? $request->getClientIp() : $request->server->get('REMOTE_ADDR');
-        if (is_string($ip) && $ip !== '' && $this->allowedIps !== [] && IpUtils::checkIp($ip, $this->allowedIps)) {
-            return true;
+        if ($this->allowedIps !== [] && ($this->trustForwardedIp || !self::isProxied($request))) {
+            $ip = $this->trustForwardedIp ? $request->getClientIp() : $request->server->get('REMOTE_ADDR');
+            if (is_string($ip) && $ip !== '' && IpUtils::checkIp($ip, $this->allowedIps)) {
+                return true;
+            }
         }
 
-        return BearerToken::matches($request, BearerToken::resolve($this->token, $this->tokenProvider));
+        if (BearerToken::extract($request) === null) {
+            return false;
+        }
+
+        return BearerToken::matches($request, BearerToken::resolve($this->token, $this->tokenProvider, $this->logger));
+    }
+
+    /**
+     * Whether the request carries proxy forwarding headers.
+     *
+     * @param Request $request incoming request
+     *
+     * @return bool true when `Forwarded`, `X-Forwarded-For` or `X-Real-IP` is present
+     */
+    public static function isProxied(Request $request): bool
+    {
+        foreach (self::FORWARDING_HEADERS as $header) {
+            if ($request->headers->has($header)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

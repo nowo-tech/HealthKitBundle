@@ -30,7 +30,8 @@ nowo_health_kit:
     live:
         expose_client_ip: false   # add client_ip (Request::getClientIp(), trusted proxies applied)
     ready:
-        public_cache_ttl: 5.0     # seconds the anonymous readiness answer is reused per worker (0 = off)
+        public_cache_ttl: 5.0     # seconds the anonymous readiness answer is reused (0 = off)
+        cache_pool: cache.app     # PSR-6 pool sharing it across PHP processes (null = per-worker memo only)
     details:
         public: false             # details for everybody (dev/test only)
         allowed_ips: ['127.0.0.1', '::1']
@@ -79,9 +80,17 @@ nowo_health_kit:
 | `budget` | float `5.0`, > 0 | Time a whole group may spend. Probes not started once it is spent are reported as `error` (or `degraded` when not critical). |
 | `version` | string `''` | Version string added to `/health/live` (`"version"`). Typical: `'%env(default::APP_VERSION)%'`. |
 | `live.expose_client_ip` | bool `false` | Add `"client_ip"` to `/health/live` — useful to verify `framework.trusted_proxies`. The caller only sees its own address. |
-| `ready.public_cache_ttl` | float `5.0`, ≥ 0 | Anonymous readiness answers are memoised per PHP worker for this many seconds (status + timestamp only). Detail callers always get a fresh run. |
+| `ready.public_cache_ttl` | float `5.0`, ≥ 0 | Anonymous readiness answers are reused for this many seconds (status, healthy flag and timestamp only): per-worker memo plus `ready.cache_pool`. Detail callers always get a fresh run. |
+| `ready.cache_pool` | string `cache.app`, or null | PSR-6 pool (service id) storing the anonymous readiness answer for `public_cache_ttl`, so PHP-FPM and classic FrankenPHP processes share it instead of running the probes on every anonymous request. A missing service is ignored; a failing pool only disables sharing. Null: per-worker memo only (then rate-limit `/health/*` at the proxy under FPM / classic mode). |
 
 ## details — who sees probe details
+
+> **Reverse proxy on the same host or pod?** If a proxy (Caddy/nginx on the host, Varnish, `cloudflared`, an nginx
+> sidecar…) connects to the app over loopback, every client arrives with `REMOTE_ADDR = 127.0.0.1`. The bundle then
+> ignores the IP allowlist for requests carrying `Forwarded`, `X-Forwarded-For` or `X-Real-IP` (only the token grants
+> details), but a proxy that does **not** add those headers would still expose details to the Internet. In that setup
+> set `details.allowed_ips: []` (token only), or configure `framework.trusted_proxies` and `details.trust_forwarded_ip: true`.
+
 
 Public callers get the status only (`{"status":"ok"}`). A caller gets the full report (probe names, durations,
 messages, data) when **one** of these holds:
@@ -89,7 +98,7 @@ messages, data) when **one** of these holds:
 | Key | Default | Rule |
 | --- | --- | --- |
 | `details.public` | `false` | Everybody sees details. Use only under `when@dev` / `when@test`. |
-| `details.allowed_ips` | `['127.0.0.1', '::1']` | `REMOTE_ADDR` matches an IP or CIDR (`10.0.0.0/8`, `fd00::/8`). Validated at compile time. An empty list disables the IP rule. |
+| `details.allowed_ips` | `['127.0.0.1', '::1']` | `REMOTE_ADDR` matches an IP or CIDR (`10.0.0.0/8`, `fd00::/8`). Validated at compile time. An empty list disables the IP rule. With `trust_forwarded_ip: false`, requests carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` never match (they came through a proxy). |
 | `details.token` | `null` | `Authorization: Bearer <token>` matches (constant-time). Tokens shorter than 16 characters are ignored (fail closed). `?token=` query strings are never read. Empty string = `null`. |
 | `details.token_provider` | `null` | Service id of a `Nowo\HealthKitBundle\Http\DetailsTokenProviderInterface` whose `getToken(): ?string` is called per request (only when the caller is not already allowed by `public` / `allowed_ips`). For tokens editable at runtime. Mutually exclusive with `token` (configuration error when both are set). A null, short (< 16 chars) or throwing provider grants nothing. |
 | `details.trust_forwarded_ip` | `false` | Match `allowed_ips` against `Request::getClientIp()` (honours `framework.trusted_proxies`). Leave off unless every request goes through a trusted proxy: otherwise a client could claim `X-Forwarded-For: 127.0.0.1`. |
@@ -119,8 +128,10 @@ One probe named `doctrine.<connection>` per DBAL connection runs the platform du
 | `enabled` | `false` | Needs `doctrine/doctrine-bundle`; enabling it without a DBAL connection fails the compilation. |
 | `connections` | `[]` | Names to ping; empty = all. Unknown names fail the compilation and list the available ones. |
 
-DBAL has no portable query timeout: bound the connect time in the connection (`options: { !php/const PDO::ATTR_TIMEOUT: 2 }`
-for MySQL/SQLite, `?connect_timeout=2` for PostgreSQL). The checker still reports an overrun as an error.
+On MySQL the probe sends `SELECT /*+ MAX_EXECUTION_TIME(<timeout ms>) */ 1`. DBAL has no portable socket or statement
+timeout, so also bound connect and read time in the connection: `options: { !php/const PDO::ATTR_TIMEOUT: 2,
+!php/const PDO::MYSQL_ATTR_READ_TIMEOUT: 2 }` for MySQL, `?connect_timeout=2&options=-c%20statement_timeout%3D2000` for
+PostgreSQL. The checker still reports an overrun as an error.
 
 ### redis
 
@@ -154,7 +165,9 @@ probes:
 | `critical` | `false` | A backlog degrades readiness instead of taking the instance out of rotation. |
 
 The count comes from the transport (`MessageCountAwareInterface`: Doctrine, Redis, AMQP, Beanstalkd…); a transport
-that cannot count reports `degraded` ("cannot report its message count").
+that cannot count reports `degraded` ("cannot report its message count"). `getMessageCount()` takes no timeout, so
+bound it in the transport DSN: Doctrine through the DBAL connection options above, Redis `?read_timeout=2&timeout=2`,
+AMQP `?connect_timeout=2&read_timeout=2`. The checker still reports an overrun as an error.
 
 ### frankenphp
 
@@ -175,9 +188,9 @@ Probe `frankenphp` reports `sapi`, `frankenphp_mode` (`classic`/`worker`), `fran
 | `token` | `null` | `Authorization: Bearer <token>`, ≥ 16 characters, constant-time compare, never logged. `?token=` is never read. |
 | `token_provider` | `null` | Service id of a `Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface`; `getToken(): ?string` is called on **every scrape** (no caching across requests), so a token edited in your settings applies immediately, also in FrankenPHP worker mode. Mutually exclusive with `token`. Same fail-closed rules: a null, short or throwing provider counts as "no token" (503 unless `roles` is set). |
 | `roles` | `[]` | Session roles also allowed (e.g. `ROLE_ADMIN`; needs `symfony/security-core`). An empty list grants nobody. |
-| `probe_metrics` | `true` | Export every probe as `health_probe_status{probe}` (1/0.5/0), `health_probe_duration_seconds{probe}` and `health_probe_data{probe,key}`. Probes run once per scrape. |
+| `probe_metrics` | `true` | Export every probe as `health_probe_status{probe}` (1/0.5/0), `health_probe_duration_seconds{probe}` and `health_probe_data{probe,key}`. Probes run once per scrape, within `budget`. |
 
-With `enabled: true` and neither a usable token (static or from the provider) nor a role, the endpoint answers **503** (fail closed).
+With `enabled: true` and neither a usable token (static or from the provider) nor a role, the endpoint answers **503** (fail closed). With a `token_provider`, requests without an `Authorization: Bearer` header never call the provider and get **401** (or 200 via `roles`).
 
 ### Runtime token providers
 
@@ -202,8 +215,9 @@ nowo_health_kit:
         token_provider: App\Metrics\SettingsMetricsToken
 ```
 
-The provider is called once per request that needs it; keep the lookup cheap (one settings read). If it throws, the
-bundle treats the token as missing and does not log the exception (it could carry the value).
+The provider is called only for requests that carry an `Authorization: Bearer` header (anonymous traffic never
+triggers it), once per such request; keep the lookup cheap (one settings read). If it throws, the bundle treats the
+token as missing and logs a warning with the provider and exception class names only (never the message).
 
 ## Timeout hierarchy
 

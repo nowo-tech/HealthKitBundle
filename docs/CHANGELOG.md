@@ -7,8 +7,19 @@ All notable changes to this project are documented here. The format follows
 
 First release candidate (1.0.0), extracted and generalised from the Symfony Beacon health and metrics code.
 
+### Security
+
+- Security audit BX (Pass (good) / Low) remediation:
+  - L1: with `details.trust_forwarded_ip` off, requests carrying `Forwarded`, `X-Forwarded-For` or `X-Real-IP` no longer get details through `details.allowed_ips` (a same-host reverse proxy made every client look like loopback); only the token grants them. Warning added to CONFIGURATION, SECURITY, USAGE and the recipe.
+  - L2: anonymous readiness answers are shared through a PSR-6 pool (`ready.cache_pool`, default `cache.app`) so PHP-FPM / classic mode no longer run the probes on every anonymous request; the MySQL Doctrine probe sends a `MAX_EXECUTION_TIME` hint; `HealthChecker::checkAll()` (probe metrics) honours the group budget; DBAL / Messenger timeout configuration documented.
+  - L3: token providers are only called when the request carries an `Authorization: Bearer` header (details and `/metrics`); with a provider, anonymous `/metrics` requests get 401.
+  - L4: the Redis probe disconnects Predis clients with `disconnect()` (phpredis / Relay with `close()`), a failing close never masks the outcome, and owned clients are closed on every path (the Predis DSN probe used to always fail).
+  - L5: `ErrorSanitizer` redacts URL userinfo up to the last `@`, scheme-less `user:pass@host`, `Bearer`/`Basic` credentials and `key=value` / `key: value` / JSON / PHP-array pairs with secret-looking keys; host probe messages and data are redacted too.
+  - I1/I2: Prometheus name regexes anchored with `D`; help texts and label values scrubbed to valid UTF-8 with `\r` normalised; duplicate label sets rejected per family and dropped when merging providers. I4: token provider failures logged (class names only). I9: demo port bound to `127.0.0.1`.
+
 ### Added
 
+- `ready.cache_pool` (default `cache.app`): PSR-6 pool for the anonymous readiness answer. New runtime requirements `psr/cache` and `symfony/polyfill-mbstring`.
 - `metrics.token_provider` and `details.token_provider`: service ids of a `MetricsTokenProviderInterface` / `DetailsTokenProviderInterface` (`getToken(): ?string`, common `Http\TokenProviderInterface`) resolved on every request, for tokens editable at runtime (e.g. stored in settings). Mutually exclusive with `metrics.token` / `details.token` (configuration error when both are set). Same fail-closed rules: a null, short (< 16 chars) or throwing provider counts as no token; header-only, constant-time comparison, never logged. `BearerToken::resolve()` helper.
 - `/health/live` and `/health/ready` (`HealthController`): JSON, `GET`/`HEAD`, stateless routes, `Cache-Control: no-store, private`, `X-Robots-Tag: noindex`; HTTP 200 for `ok`/`degraded`, 503 for `error`.
 - Opt-in routes: `@NowoHealthKitBundle/config/routes/health.yaml` and `metrics.yaml`; controllers are registered with `autoconfigure: false` so `routing.controllers` never exposes them (REQ-SF-004 rule 7, covered by a kernel test).

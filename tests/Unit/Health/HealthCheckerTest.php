@@ -165,4 +165,31 @@ final class HealthCheckerTest extends TestCase
     {
         return new RecordingLogger();
     }
+
+    #[Test]
+    public function checkAllRespectsTheBudget(): void
+    {
+        $checker = new HealthChecker([
+            $this->probe('a', fn (): ProbeResult => $this->sleepThen(0.9, ProbeResult::ok())),
+            $this->probe('b', ProbeResult::ok(), ['live']),
+        ], $this->clock, 0.5);
+
+        $reports = $checker->checkAll();
+
+        self::assertSame(HealthStatus::Ok, $reports[0]->status);
+        self::assertSame(HealthStatus::Error, $reports[1]->status);
+    }
+
+    #[Test]
+    public function probeMessagesAndDataAreRedacted(): void
+    {
+        $checker = new HealthChecker([
+            $this->probe('api', ProbeResult::degraded('slow, token=abc123 via https://u:p@api.example', ['api_key' => 'k-123', 'endpoint' => 'redis://:pw@cache:6379', 'depth' => 3])),
+        ], $this->clock);
+
+        $report = $checker->check('ready')->probes[0];
+
+        self::assertSame('slow, token=*** via https://***@api.example', $report->message);
+        self::assertSame(['api_key' => '***', 'endpoint' => 'redis://***@cache:6379', 'depth' => 3], $report->data);
+    }
 }

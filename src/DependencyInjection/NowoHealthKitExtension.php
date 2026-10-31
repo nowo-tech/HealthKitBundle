@@ -58,7 +58,7 @@ final class NowoHealthKitExtension extends Extension
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
-        /** @var array{default_timeout: float, budget: float, version: string, live: array{expose_client_ip: bool}, ready: array{public_cache_ttl: float}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
+        /** @var array{default_timeout: float, budget: float, version: string, live: array{expose_client_ip: bool}, ready: array{public_cache_ttl: float, cache_pool: string|null}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
         $config = $this->processConfiguration(new Configuration(), $configs);
 
         $container->setParameter('nowo_health_kit.default_timeout', $config['default_timeout']);
@@ -97,7 +97,9 @@ final class NowoHealthKitExtension extends Extension
                 $config['details']['public'],
                 $config['details']['trust_forwarded_ip'],
                 $this->providerReference($config['details']['token_provider']),
-            ]);
+                new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'health']);
 
         $container->register('nowo_health_kit.frankenphp_runtime', FrankenPhpRuntime::class)
             ->setArguments([new Reference('request_stack', ContainerInterface::NULL_ON_INVALID_REFERENCE)]);
@@ -152,7 +154,7 @@ final class NowoHealthKitExtension extends Extension
     {
         /** @var array{expose_client_ip: bool} $live */
         $live = $config['live'];
-        /** @var array{public_cache_ttl: float} $ready */
+        /** @var array{public_cache_ttl: float, cache_pool: string|null} $ready */
         $ready = $config['ready'];
         /** @var array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool} $metrics */
         $metrics = $config['metrics'];
@@ -165,6 +167,7 @@ final class NowoHealthKitExtension extends Extension
                 (string) $config['version'],
                 $live['expose_client_ip'],
                 $ready['public_cache_ttl'],
+                $ready['cache_pool'] === null || $ready['cache_pool'] === '' ? null : new Reference($ready['cache_pool'], ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ])
             ->setPublic(true)
             ->setAutoconfigured(false)
@@ -195,7 +198,9 @@ final class NowoHealthKitExtension extends Extension
                 $metrics['roles'],
                 new Reference('security.authorization_checker', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 $this->providerReference($metrics['token_provider']),
+                new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ])
+            ->addTag('monolog.logger', ['channel' => 'health'])
             ->setPublic(true)
             ->setAutoconfigured(false)
             ->addTag('controller.service_arguments'));
