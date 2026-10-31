@@ -20,7 +20,7 @@ final readonly class MetricFamily
      * @param string $help help text (escaped by the formatter)
      * @param list<MetricSample> $samples samples
      *
-     * @throws InvalidArgumentException when the name is not a valid Prometheus metric name
+     * @throws InvalidArgumentException when the name is not a valid Prometheus metric name or two samples share a label set
      */
     public function __construct(
         public string $name,
@@ -28,8 +28,16 @@ final readonly class MetricFamily
         public string $help,
         public array $samples,
     ) {
-        if (preg_match('/^[a-zA-Z_:][a-zA-Z0-9_:]*$/', $name) !== 1) {
+        if (preg_match('/^[a-zA-Z_:][a-zA-Z0-9_:]*$/D', $name) !== 1) {
             throw new InvalidArgumentException(sprintf('Invalid Prometheus metric name "%s".', $name));
+        }
+        $seen = [];
+        foreach ($samples as $sample) {
+            $key = $sample->seriesKey();
+            if (isset($seen[$key])) {
+                throw new InvalidArgumentException(sprintf('Duplicate label set in Prometheus metric "%s".', $name));
+            }
+            $seen[$key] = true;
         }
     }
 

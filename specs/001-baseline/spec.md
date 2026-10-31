@@ -84,32 +84,32 @@ fail the compilation.
 ### HTTP
 
 - **FR-HTTP-001**: `/health/live` (`nowo_health_kit_live`) runs the `live` group; adds `version` and `client_ip` when configured.
-- **FR-HTTP-002**: `/health/ready` (`nowo_health_kit_ready`) runs the `ready` group; public answers are memoised per worker for `ready.public_cache_ttl` (0 disables).
+- **FR-HTTP-002**: `/health/ready` (`nowo_health_kit_ready`) runs the `ready` group; public answers are reused for `ready.public_cache_ttl` via a per-worker memo and the `ready.cache_pool` PSR-6 pool shared across processes (0 disables both; a failing pool is ignored).
 - **FR-HTTP-003**: Health responses: JSON, GET/HEAD, stateless, `no-store, private`, `X-Robots-Tag: noindex`; 503 only on `error`.
-- **FR-HTTP-004**: `DetailsAccessPolicy` grants details for `details.public`, `REMOTE_ADDR` (or `getClientIp()` with `trust_forwarded_ip`) in `allowed_ips`, or a matching bearer token.
+- **FR-HTTP-004**: `DetailsAccessPolicy` grants details for `details.public`, `REMOTE_ADDR` (or `getClientIp()` with `trust_forwarded_ip`) in `allowed_ips` — never for requests carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` when `trust_forwarded_ip` is off — or a matching bearer token.
 - **FR-HTTP-005**: `BearerToken` reads only `Authorization: Bearer`, compares with `hash_equals()`, ignores tokens shorter than 16 chars.
-- **FR-HTTP-007**: `details.token_provider` / `metrics.token_provider` (`DetailsTokenProviderInterface`, `MetricsTokenProviderInterface`, both `TokenProviderInterface`) are resolved per request by `BearerToken::resolve()`, exclusive with the static token; null, short or throwing providers fail closed.
+- **FR-HTTP-007**: `details.token_provider` / `metrics.token_provider` (`DetailsTokenProviderInterface`, `MetricsTokenProviderInterface`, both `TokenProviderInterface`) are resolved per request by `BearerToken::resolve()` only when an `Authorization: Bearer` header is present (`BearerToken::extract()`), exclusive with the static token; null, short or throwing providers fail closed and failures are logged with class names only.
 - **FR-HTTP-006**: `/metrics` (`nowo_health_kit_metrics`): 404 disabled, 503 unconfigured, 401 + `WWW-Authenticate` unauthorized, 200 text 0.0.4 with token or a granted role (empty roles grant nobody).
 
 ### Probes and runner
 
 - **FR-PROBE-001**: `HealthProbeInterface::check(float $timeout): ProbeResult`; `ProbeResult` carries `HealthStatus`, an optional message and scalar data.
 - **FR-PROBE-002**: `HealthStatus` (`ok`, `degraded`, `error`) with severity ordering and gauge values 1 / 0.5 / 0.
-- **FR-PROBE-003**: Doctrine probe runs the platform dummy select.
-- **FR-PROBE-004**: Redis probe pings a client service or a DSN connection opened with connect/read timeouts and closed afterwards; non-PONG answers are errors.
+- **FR-PROBE-003**: Doctrine probe runs the platform dummy select (MySQL: with a `MAX_EXECUTION_TIME(<timeout ms>)` hint).
+- **FR-PROBE-004**: Redis probe pings a client service or a DSN connection opened with connect/read timeouts and closed afterwards (Predis `disconnect()`, others `close()`, never masking the outcome); non-PONG answers are errors.
 - **FR-PROBE-005**: Messenger probe reports `messages` and degrades/fails at `warn_at`/`fail_at`; non-countable transports are degraded.
 - **FR-PROBE-006**: FrankenPHP probe reports the runtime snapshot and fails without a worker when `require_worker`.
 - **FR-PROBE-007**: `FrankenPhpRuntime` reads the main request server bag, then the process environment; no superglobals.
-- **FR-RUN-001**: `HealthChecker` runs probes of a group in name order, passes each its timeout, turns exceptions into sanitized errors, marks overruns as errors, skips probes once the budget is spent, downgrades non-critical errors to degraded, logs failures without secrets.
+- **FR-RUN-001**: `HealthChecker` runs probes of a group in name order, passes each its timeout, turns exceptions into sanitized errors, marks overruns as errors, skips probes once the budget is spent (also in `checkAll()`), downgrades non-critical errors to degraded, logs failures without secrets.
 - **FR-RUN-002**: `HealthReport` / `ProbeReport` expose the overall status, HTTP health and the detailed array.
-- **FR-RUN-003**: `ErrorSanitizer` redacts DSN credentials and `password=`/`token=`-style pairs and truncates to 300 chars.
+- **FR-RUN-003**: `ErrorSanitizer` redacts URL userinfo, scheme-less `user:pass@host`, Bearer/Basic credentials and secret-looking key/value pairs (`=`, `:`, `=>`, JSON), truncates exceptions to 300 chars, and redacts host probe messages and data.
 - **FR-RUN-004**: `#[AsHealthProbe]` carries name, groups, critical and timeout.
 
 ### Metrics
 
-- **FR-MET-001**: `MetricFamily` / `MetricSample` / `MetricType` validate metric and label names.
-- **FR-MET-002**: `PrometheusTextFormatter` renders text 0.0.4 with escaped help and label values, NaN / ±Inf, integral values without decimals.
-- **FR-MET-003**: `MetricsCollector` runs providers once, merges same-name/same-type families, drops type clashes, isolates failing providers and adds `health_kit_metrics_provider_up`.
+- **FR-MET-001**: `MetricFamily` / `MetricSample` / `MetricType` validate metric and label names (anchored with `D`) and reject duplicate label sets.
+- **FR-MET-002**: `PrometheusTextFormatter` renders text 0.0.4 with escaped help and label values, NaN / ±Inf, integral values without decimals; help and label values scrubbed to valid UTF-8 with `\r` normalised.
+- **FR-MET-003**: `MetricsCollector` runs providers once, merges same-name/same-type families (dropping duplicate series), drops type clashes, isolates failing providers and adds `health_kit_metrics_provider_up`.
 - **FR-MET-004**: `ProbeMetricsProvider` exports `health_probe_status`, `health_probe_duration_seconds` and numeric/boolean `health_probe_data`.
 - **FR-MET-005**: `MetricsProviderInterface::collect(): iterable<MetricFamily>`.
 

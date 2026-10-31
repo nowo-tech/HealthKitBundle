@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Nowo\HealthKitBundle\Probe;
 
 use Closure;
+use Predis\ClientInterface as PredisClientInterface;
 use Stringable;
 use Symfony\Component\Cache\Adapter\RedisAdapter;
+use Throwable;
 
 use function is_callable;
 use function is_string;
+use function method_exists;
 use function str_contains;
 use function strtoupper;
 
@@ -60,17 +63,15 @@ final readonly class RedisProbe implements HealthProbeInterface
             $owned = true;
         }
 
-        $ping  = [$client, 'ping'];
-        $close = [$client, 'close'];
-        if (!is_callable($ping)) {
-            return ProbeResult::error('The Redis client does not support PING.');
-        }
-
         try {
+            $ping = [$client, 'ping'];
+            if (!is_callable($ping)) {
+                return ProbeResult::error('The Redis client does not support PING.');
+            }
             $pong = $ping();
         } finally {
-            if ($owned && is_callable($close)) {
-                $close();
+            if ($owned) {
+                $this->disconnect($client);
             }
         }
 
@@ -79,5 +80,24 @@ final readonly class RedisProbe implements HealthProbeInterface
         }
 
         return ProbeResult::error('Redis did not answer PONG.');
+    }
+
+    /**
+     * Closes a connection opened by this probe, with the method of its client type (Predis `disconnect()`, phpredis
+     * and Relay `close()`); a failure while closing never masks the probe outcome (audit BX L4).
+     *
+     * @param object $client client opened from the DSN
+     */
+    private function disconnect(object $client): void
+    {
+        try {
+            if ($client instanceof PredisClientInterface) {
+                $client->disconnect();
+            } elseif (method_exists($client, 'close')) {
+                $client->close();
+            }
+        } catch (Throwable) {
+            // Closing is best effort; the socket is released with the object anyway.
+        }
     }
 }

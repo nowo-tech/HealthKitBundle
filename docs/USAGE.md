@@ -43,7 +43,7 @@ are `stateless` (no session is started).
 ```
 
 `/health/live` adds `"version"` when `version` is set and `"client_ip"` when `live.expose_client_ip` is true. Public
-`/health/ready` answers are memoised per worker for `ready.public_cache_ttl` seconds.
+`/health/ready` answers are reused for `ready.public_cache_ttl` seconds (per-worker memo + `ready.cache_pool`).
 
 ### Detailed answer
 
@@ -187,7 +187,8 @@ healthcheck:
   retries: 3
 ```
 
-Inside the container the caller is loopback, so `curl http://127.0.0.1/health/ready` shows the details.
+Inside the container the caller is loopback, so `curl http://127.0.0.1/health/ready` shows the details. Behind a
+reverse proxy on the same host or pod, read the proxy warning in [CONFIGURATION.md](CONFIGURATION.md#details--who-sees-probe-details).
 
 ### Prometheus scrape config
 

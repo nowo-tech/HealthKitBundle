@@ -64,4 +64,13 @@ final class BearerTokenTest extends TestCase
         self::assertNull(BearerToken::resolve('static-token', new MutableTokenProvider()));
         self::assertNull(BearerToken::resolve(null, new MutableTokenProvider('x', true)));
     }
+
+    #[Test]
+    public function extractReadsOnlyANonEmptyBearerHeader(): void
+    {
+        self::assertSame('abc', BearerToken::extract(Request::create('/', server: ['HTTP_AUTHORIZATION' => 'bearer  abc '])));
+        self::assertNull(BearerToken::extract(Request::create('/', server: ['HTTP_AUTHORIZATION' => 'Bearer   '])));
+        self::assertNull(BearerToken::extract(Request::create('/', server: ['HTTP_AUTHORIZATION' => 'Basic abc'])));
+        self::assertNull(BearerToken::extract(Request::create('/?token=abc')));
+    }
 }

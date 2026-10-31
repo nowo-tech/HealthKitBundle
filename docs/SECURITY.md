@@ -27,26 +27,27 @@ services themselves.
 
 | Input | Where | Notes |
 | --- | --- | --- |
-| Anonymous HTTP `GET`/`HEAD` | `/health/live`, `/health/ready` (only when the host imports `config/routes/health.yaml`) | Status-only answer; readiness memoised per worker. |
+| Anonymous HTTP `GET`/`HEAD` | `/health/live`, `/health/ready` (only when the host imports `config/routes/health.yaml`) | Status-only answer; anonymous readiness reused for `ready.public_cache_ttl` (worker memo + shared PSR-6 pool). |
 | `Authorization: Bearer` header | health details, `/metrics` | Compared in constant time against configured tokens (≥ 16 chars), static or returned per request by a token provider service. |
-| `REMOTE_ADDR` (or `getClientIp()` when `trust_forwarded_ip`) | health details | Matched against `details.allowed_ips`. |
+| `REMOTE_ADDR` (or `getClientIp()` when `trust_forwarded_ip`) | health details | Matched against `details.allowed_ips`; with `trust_forwarded_ip` off, requests carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` are never matched. |
 | Session roles | `/metrics` | Only when `metrics.roles` is not empty and SecurityBundle is installed. |
 | Configuration | `nowo_health_kit.*` | Validated at compile time; DSNs and tokens come from env vars. |
-| Probe / provider output | host code | Messages and data are shown to detail callers and scrapers. |
+| Probe / provider output | host code | Messages and data are redacted, then shown to detail callers; provider families go to scrapers. |
 
 ## Threat model and mitigations
 
 | Threat | Mitigation |
 | --- | --- |
-| **Information disclosure** (dependency names, hosts, versions, error messages) to the public | Public callers get the status only. Details require an allowlisted `REMOTE_ADDR` (loopback by default), a bearer token, or the explicit `details.public` dev switch. Exception messages are sanitized (DSN credentials and `password=`/`token=` pairs redacted, 300 chars max). |
+| **Information disclosure** (dependency names, hosts, versions, error messages) to the public | Public callers get the status only. Details require an allowlisted `REMOTE_ADDR` (loopback by default), a bearer token, or the explicit `details.public` dev switch. Exception messages (300 chars max) and host probe messages/data are redacted: URL userinfo up to the last `@`, scheme-less `user:pass@host`, `Bearer`/`Basic` credentials, and `key=value` / `key: value` / JSON / PHP-array pairs whose key contains password, secret, token, api key, auth or credential (`PGPASSWORD=`, `client_secret=`…). |
+| **Same-host reverse proxy over loopback** (audit BX L1) | Every client would look like `127.0.0.1`. With `trust_forwarded_ip` off, requests carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` are never granted details through the IP allowlist (token only). A proxy that adds none of these headers is not detectable: set `details.allowed_ips: []` (token only) or use trusted proxies + `trust_forwarded_ip: true`. Documented in CONFIGURATION, USAGE and the recipe. |
 | **IP spoofing** through `X-Forwarded-For` to reach details | `REMOTE_ADDR` (TCP peer) is used by default; forwarded headers only with `details.trust_forwarded_ip: true`, which then relies on `framework.trusted_proxies`. |
-| **Runtime token providers** (`details.token_provider`, `metrics.token_provider`) | Resolved on every request (never cached by the bundle), so a revoked or rotated token stops working immediately, also in FrankenPHP worker mode. Mutually exclusive with the static token (compile error). A provider returning null, a token shorter than 16 characters, or throwing is treated as "no token" (fail closed: 401 / 503 / status-only); the exception is swallowed without logging, since it could contain the value. Same constant-time, header-only comparison. |
+| **Runtime token providers** (`details.token_provider`, `metrics.token_provider`) | Resolved on every request (never cached by the bundle), so a revoked or rotated token stops working immediately, also in FrankenPHP worker mode. Mutually exclusive with the static token (compile error). A provider returning null, a token shorter than 16 characters, or throwing is treated as "no token" (fail closed: 401 / 503 / status-only); the failure is logged as a warning with the provider and exception class names only (never the message, which could contain the value). Providers are only called for requests carrying an `Authorization: Bearer` header, so anonymous traffic cannot use them as an amplifier. Same constant-time, header-only comparison. |
 | **Token brute force / timing attacks** | `hash_equals()`; tokens shorter than 16 characters are ignored (fail closed); only the `Authorization` header is read (no query string, so no leak into access logs, proxies or `Referer`). Rate limiting belongs to the host (reverse proxy or `symfony/rate-limiter`). |
 | **Unauthorized metrics scraping** | `/metrics` is disabled by default (404). Enabled without token or roles it answers 503. An empty roles list grants nobody (no "allow everyone" fallback). Missing SecurityBundle disables the role path. Wrong or missing token: 401 with `WWW-Authenticate`. |
-| **Denial of service** (hammering the database through `/health/ready`) | Anonymous readiness answers are memoised per worker (`ready.public_cache_ttl`, 5 s). Probes are bounded by per-probe timeouts and a group budget; one cheap query/command per dependency, no N+1. |
+| **Denial of service** (hammering the database through `/health/ready`) | Anonymous readiness answers are reused for `ready.public_cache_ttl` (5 s): a per-worker memo plus a PSR-6 pool shared across processes (`ready.cache_pool`, default `cache.app`), so PHP-FPM and classic mode are covered too. With `cache_pool: null` under FPM/classic, every anonymous request runs the probes — rate-limit `/health/*` at the proxy. `/health/live` is not memoised (keep `live` probes cheap). Probes get their timeout (Redis connect/read, MySQL `MAX_EXECUTION_TIME` hint; DBAL and Messenger transports need connection/DSN timeouts, see CONFIGURATION) and every run — including `/metrics` probe gauges — stops starting probes once the group budget is spent. One cheap query/command per dependency, no N+1. |
 | **Cache poisoning / stale health** | `Cache-Control: no-store, private` on every response; health routes are stateless. |
 | **Accidental route exposure** | Controllers are not autoconfigured, so `routing.controllers` never loads them; routes exist only through the documented import (REQ-SF-004 rule 7, covered by an integration test). |
-| **Injection** | No user input reaches queries or commands: Doctrine runs the platform dummy select, Redis `PING`, Messenger `getMessageCount()`. Prometheus label values and help texts are escaped; metric and label names are validated. JSON responses use `JsonResponse` encoding. |
+| **Injection** | No user input reaches queries or commands: Doctrine runs the platform dummy select, Redis `PING`, Messenger `getMessageCount()`. Prometheus label values and help texts are scrubbed to valid UTF-8 and escaped (`\r` normalised to an escaped line feed); metric and label names are validated (anchored with `D`, so no trailing newline); duplicate label sets are rejected per family and dropped (with a warning) when merging providers. JSON responses use `JsonResponse` encoding. |
 | **SSRF** | Probe targets come from configuration only (DSN / service ids), never from the request. |
 | **Cross-request state leaks (FrankenPHP worker)** | Services are stateless except the anonymous readiness memo (status + timestamp, no request data). Redis DSN connections are opened and closed per check. See [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md). |
 | **XSS / CSRF** | No HTML output and no state-changing endpoint. |
@@ -94,13 +95,32 @@ N/A — no session-authenticated mutation: every endpoint is a read-only `GET`/`
 | No-secret logs | See [Logging](#logging). |
 | Cryptography | Constant-time comparison only. |
 | Permissions / exposure | Opt-in routes; status-only public answers; fail-closed metrics. |
-| Limits / DoS | Public readiness memo, per-probe timeouts, group budget. |
-| AI security audit (REQ-SEC-004) | Pending independent audit before the first tag — see below. |
+| Limits / DoS | Public readiness memo + shared pool, per-probe timeouts, group budget (also for `/metrics`). |
+| AI security audit (REQ-SEC-004) | Pass (good) / Low, 2026-10-31 (Appendix BX) — see below. |
 
 ## AI security audit (REQ-SEC-004)
 
-Not yet audited. The first release (1.0.0) is blocked until an independent AI security audit records a passing grade
-in the monorepo `BUNDLES_SECURITY_ANALYSIS.md`.
+**Pass (good) / Low** — independent audit, 2026-10-31, revision `13f0a8b` (monorepo `BUNDLES_SECURITY_ANALYSIS.md`,
+Appendix BX). No Critical, High or Medium findings. Low findings fixed before 1.0.0:
+
+| Finding | Status |
+| --- | --- |
+| L1 — loopback allowlist behind a same-host reverse proxy | Fixed: forwarding headers disable the IP allowlist when `trust_forwarded_ip` is off; prominent docs + recipe warning. Residual: a proxy that adds no forwarding header is undetectable (documented). |
+| L2 — anonymous readiness memo only effective in worker mode | Fixed: shared PSR-6 pool (`ready.cache_pool`), MySQL statement hint, budget in `checkAll()`, documented DB/transport timeouts and claims corrected. Residual: DBAL/Messenger socket timeouts remain connection/DSN configuration. |
+| L3 — token providers called for anonymous requests | Fixed: providers only run when an `Authorization: Bearer` header is present (details and metrics). |
+| L4 — Redis DSN probe always failing with Predis | Fixed: Predis `disconnect()`, phpredis/Relay `close()`, closing never masks the result, owned clients closed on every path. |
+| L5 — sanitizer gaps; host probe output not redacted | Fixed: wider redaction and applied to probe messages and data. Residual: free-form secrets without a recognisable shape cannot be detected — probes must not echo secrets. |
+| I1 / I2 — Prometheus names, `\r`, invalid UTF-8, duplicate series | Fixed. |
+| I4 — silent token provider failures | Fixed: warning with class names only. |
+| I9 — demo port on all interfaces | Fixed: bound to `127.0.0.1`. |
+
+Accepted residuals (Info):
+
+- **I3** — `hash_equals()` returns early on a length mismatch, leaking only the token length; negligible for random tokens of 16+ characters.
+- **I5** — `metrics.roles` without SecurityBundle, or `/metrics` outside a firewall with the session: the role path never grants (fails closed).
+- **I6** — anonymous `/metrics` callers can tell "not configured" (503) from "unauthorized" (401); with a token provider, anonymous requests always get 401.
+- **I7** — `version` and `live.expose_client_ip` add the app version and the caller's own resolved IP to the public `/health/live` answer (both opt-in).
+- **I8** — `trust_forwarded_ip: true` with permissive `framework.trusted_proxies` (`0.0.0.0/0`, `REMOTE_ADDR`) makes details spoofable through `X-Forwarded-For`; configure trusted proxies narrowly.
 
 ## Reporting a vulnerability
 

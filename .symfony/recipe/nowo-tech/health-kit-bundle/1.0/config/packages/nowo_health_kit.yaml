@@ -1,6 +1,11 @@
 # NowoHealthKitBundle — see https://github.com/nowo-tech/HealthKitBundle/blob/main/docs/CONFIGURATION.md
 # Safe defaults: public callers get {"status": ...} only; details for loopback callers or the bearer token;
 # /metrics disabled until you enable it and set a token.
+#
+# WARNING: if a reverse proxy on the same host/pod connects to the app over loopback (host Caddy/nginx, Varnish,
+# cloudflared, sidecar), every client looks like 127.0.0.1. Requests with Forwarded/X-Forwarded-For/X-Real-IP never
+# match the allowlist, but if your proxy does not send them, set `details: { allowed_ips: [] }` (token only) or
+# configure framework.trusted_proxies + `details: { trust_forwarded_ip: true }`.
 nowo_health_kit:
     # version: '%env(default::APP_VERSION)%'
     details:

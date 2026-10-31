@@ -13,6 +13,9 @@ use Nowo\HealthKitBundle\Tests\Fixtures\StubProbe;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Cache\CacheItemPoolInterface;
+use RuntimeException;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -88,5 +91,58 @@ final class HealthControllerTest extends TestCase
 
         $this->setHealthy(false);
         self::assertSame(503, $this->controller()->live($this->publicRequest())->getStatusCode());
+    }
+
+    private function pooled(CacheItemPoolInterface $pool, float $ttl = 5.0): HealthController
+    {
+        $probe = new StubProbe(function (): ProbeResult {
+            ++$this->calls;
+
+            return $this->healthy ? ProbeResult::ok() : ProbeResult::error('down');
+        });
+        $checker = new HealthChecker([new RegisteredProbe('db', $probe, ['ready'], true, 1.0)], $this->clock);
+
+        return new HealthController($checker, new DetailsAccessPolicy(), $this->clock, '', false, $ttl, $pool);
+    }
+
+    #[Test]
+    public function sharedPoolServesFreshProcessesUntilTheTtl(): void
+    {
+        $this->clock = new MockClock();
+        $pool        = new ArrayAdapter();
+
+        // Two controller instances = two PHP-FPM requests (fresh container, empty worker memo).
+        self::assertSame(200, $this->pooled($pool)->ready($this->publicRequest())->getStatusCode());
+        $this->setHealthy(false);
+        self::assertSame(200, $this->pooled($pool)->ready($this->publicRequest())->getStatusCode());
+        self::assertSame(1, $this->calls);
+
+        $this->clock->sleep(5.0);
+        self::assertSame(503, $this->pooled($pool)->ready($this->publicRequest())->getStatusCode());
+        self::assertSame(2, $this->calls);
+
+        // Corrupt or future-dated entries are ignored.
+        foreach ([['at' => 'x'], 'garbage', ['at' => (float) $this->clock->now()->format('U.u') + 60, 'healthy' => true, 'status' => 'ok']] as $value) {
+            $item = $pool->getItem(HealthController::CACHE_KEY);
+            $pool->save($item->set($value));
+            $this->pooled($pool)->ready($this->publicRequest());
+        }
+        self::assertSame(5, $this->calls);
+
+        // TTL 0 never touches the pool.
+        $this->pooled($pool, 0.0)->ready($this->publicRequest());
+        $this->pooled($pool, 0.0)->ready($this->publicRequest());
+        self::assertSame(7, $this->calls);
+    }
+
+    #[Test]
+    public function brokenPoolDoesNotBreakReadiness(): void
+    {
+        $this->clock = new MockClock();
+        $pool        = $this->createStub(CacheItemPoolInterface::class);
+        $pool->method('getItem')->willThrowException(new RuntimeException('cache down'));
+
+        self::assertSame(200, $this->pooled($pool)->ready($this->publicRequest())->getStatusCode());
+        self::assertSame(1, $this->calls);
     }
 }

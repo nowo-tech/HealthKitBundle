@@ -207,4 +207,15 @@ final class HealthEndpointsTest extends KernelTestCase
         $this->expectExceptionMessage('mutually exclusive');
         $this->bootKernel(['metrics' => ['token' => self::METRICS_TOKEN, 'token_provider' => 'app.settings_token']]);
     }
+
+    #[Test]
+    public function loopbackBehindAProxyOnlyGetsTheStatus(): void
+    {
+        $kernel  = $this->bootKernel(['details' => ['token' => self::DETAILS_TOKEN]]);
+        $proxied = ['REMOTE_ADDR' => '127.0.0.1', 'HTTP_X_FORWARDED_FOR' => '198.51.100.4'];
+
+        self::assertSame(['status' => 'ok'], $this->json($this->request($kernel, '/health/ready', $proxied)));
+        self::assertArrayHasKey('checks', $this->json($this->request($kernel, '/health/ready', ['REMOTE_ADDR' => '127.0.0.1'])));
+        self::assertArrayHasKey('checks', $this->json($this->request($kernel, '/health/ready', [...$proxied, 'HTTP_AUTHORIZATION' => 'Bearer ' . self::DETAILS_TOKEN])));
+    }
 }

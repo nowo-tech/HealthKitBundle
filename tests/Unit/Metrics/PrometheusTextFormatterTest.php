@@ -86,4 +86,36 @@ final class PrometheusTextFormatterTest extends TestCase
             }
         }
     }
+
+    #[Test]
+    public function scrubsCarriageReturnsAndInvalidUtf8(): void
+    {
+        $text = (new PrometheusTextFormatter())->format([
+            new MetricFamily('jobs', MetricType::Gauge, "Jobs\r\nper queue\r", [new MetricSample(1, ['queue' => "a\rb\xC3\x28"])]),
+        ]);
+
+        self::assertSame("# HELP jobs Jobs\\nper queue\\n\n# TYPE jobs gauge\njobs{queue=\"a\\nb?(\"} 1\n", $text);
+        self::assertTrue(mb_check_encoding($text, 'UTF-8'));
+    }
+
+    #[Test]
+    public function rejectsTrailingNewlinesInNames(): void
+    {
+        foreach ([static fn (): MetricFamily => MetricFamily::gauge("app_jobs\n", 'x', 1), static fn (): MetricSample => new MetricSample(1, ["queue\n" => 'a'])] as $factory) {
+            try {
+                $factory();
+                self::fail('Exception expected.');
+            } catch (InvalidArgumentException $e) {
+                self::assertStringContainsString('Invalid Prometheus', $e->getMessage());
+            }
+        }
+    }
+
+    #[Test]
+    public function rejectsDuplicateLabelSets(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Duplicate label set in Prometheus metric "jobs"');
+        new MetricFamily('jobs', MetricType::Gauge, 'x', [new MetricSample(1, ['a' => '1', 'b' => '2']), new MetricSample(2, ['b' => '2', 'a' => '1'])]);
+    }
 }

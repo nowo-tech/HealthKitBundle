@@ -31,11 +31,11 @@ Workers that do **not** reset the kernel between requests are supported too: pro
 
 - **`/health/live` and `/health/ready`** — JSON, `Cache-Control: no-store, private`, `GET`/`HEAD`, stateless routes. HTTP **200** when every critical probe passes (`ok` or `degraded`), **503** otherwise.
 - **Opt-in routes** — nothing is exposed until you import `@NowoHealthKitBundle/config/routes/health.yaml` (and `metrics.yaml`); the controllers are never picked up by `routing.controllers`.
-- **Status-only by default** — anonymous callers get `{"status": "ok"}`. Probe names, durations, messages and data go only to callers whose `REMOTE_ADDR` is in `details.allowed_ips` (IPs/CIDRs, loopback by default) or who send `Authorization: Bearer <details.token>` (constant-time compare, never logged, `?token=` ignored).
+- **Status-only by default** — anonymous callers get `{"status": "ok"}`. Probe names, durations, messages and data go only to callers whose `REMOTE_ADDR` is in `details.allowed_ips` (IPs/CIDRs, loopback by default; ignored for requests carrying forwarding headers — mind same-host reverse proxies, see [CONFIGURATION](docs/CONFIGURATION.md#details--who-sees-probe-details)) or who send `Authorization: Bearer <details.token>` (constant-time compare, never logged, `?token=` ignored).
 - **Built-in probes** — `doctrine.<connection>` (`SELECT 1` on each DBAL connection), `redis` (`PING` through a client service or a DSN with connect/read timeouts), `messenger.<transport>` (queue depth vs `warn_at` / `fail_at`), `frankenphp` (classic/worker mode, worker number, kernel reset; optional `require_worker`).
 - **Your own probes** — implement `HealthProbeInterface`, optionally with `#[AsHealthProbe(name:, groups:, critical:, timeout:)]`; autoconfigured.
 - **Timeouts and budgets** — every probe gets its timeout (to bound its I/O) and is reported as an error when it overruns; a group budget stops starting probes once spent. Non-critical probes only degrade the answer.
-- **Cheap public readiness** — the anonymous answer is memoised per worker for `ready.public_cache_ttl` seconds (default 5) so it cannot hammer the database.
+- **Cheap public readiness** — the anonymous answer is reused for `ready.public_cache_ttl` seconds (default 5): per-worker memo plus a shared PSR-6 pool (`ready.cache_pool`, default `cache.app`), so PHP-FPM and classic mode do not run the probes on every anonymous request either.
 - **Prometheus `/metrics`** — text format 0.0.4, `Authorization: Bearer <metrics.token>` or a configured role; fail-closed (404 when disabled, 503 when no access is configured, 401 otherwise). Aggregates every `MetricsProviderInterface` service (autoconfigured) and, by default, exports each probe as `health_probe_status`, `health_probe_duration_seconds` and `health_probe_data` gauges.
 - **Runtime tokens** — `details.token_provider` / `metrics.token_provider` point at a service that returns the token per request (tokens kept in editable settings), with the same fail-closed rules.
 - **Reusable formatter** — `PrometheusTextFormatter` with validated metric/label names and escaped help/label values.
@@ -167,7 +167,7 @@ make release-check
 ## Tests and coverage
 
 - Tests: PHPUnit (PHP) — unit tests plus kernel integration tests (endpoints, opt-in routes, invalid configuration); Playwright e2e on the demo
-- PHP: 100% (665/665 statements, 744/744 elements; gate enforced in CI by `composer test-coverage-100`, no exclusions)
+- PHP: 100% (761/761 statements, 852/852 elements; gate enforced in CI by `composer test-coverage-100`, no exclusions)
 - TS/JS: N/A
 - Python: N/A
 

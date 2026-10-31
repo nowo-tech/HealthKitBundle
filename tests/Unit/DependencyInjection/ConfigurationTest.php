@@ -35,6 +35,8 @@ final class ConfigurationTest extends TestCase
         self::assertSame('', $config['version']);
         self::assertFalse($config['live']['expose_client_ip']);
         self::assertSame(5.0, $config['ready']['public_cache_ttl']);
+        self::assertSame('cache.app', $config['ready']['cache_pool']);
+        self::assertNull($this->process(['ready' => ['cache_pool' => null]])['ready']['cache_pool']);
         self::assertSame(['public' => false, 'allowed_ips' => ['127.0.0.1', '::1'], 'token' => null, 'token_provider' => null, 'trust_forwarded_ip' => false], $config['details']);
         self::assertFalse($config['probes']['doctrine']['enabled']);
         self::assertFalse($config['probes']['redis']['enabled']);
