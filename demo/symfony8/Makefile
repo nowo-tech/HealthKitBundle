@@ -108,7 +108,7 @@ verify: ensure-up
 	echo "Healthcheck OK ($$code)"
 
 # REQ-DEMO-013: Playwright runs in the official image (host network, 1 worker).
-PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.63.0-jammy
+PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-jammy
 DEMO_PORT = $$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 | tr -d '\r'); PORT=$${PORT:-8197}
 
 test-e2e: ensure-up seed-queue
