@@ -78,12 +78,16 @@ final readonly class HiddenEndpointListener
         $request = $event->getRequest();
         $context = $this->matcher->getContext();
         $method  = $context->getMethod();
+        // The router's request context is set per request by RouterListener (fromRequest); only its method is swapped
+        // for this one match and restored in `finally`, so nothing outlives the call (also in worker mode).
+        // @igor-ignore - Temporary method swap on the router context, restored in finally; reset per request by RouterListener.
         $context->setMethod('GET');
         try {
             $parameters = $this->matcher->match($request->getPathInfo());
         } catch (Throwable) {
             return;
         } finally {
+            // @igor-ignore - Restores the method swapped above.
             $context->setMethod($method);
         }
 
