@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.1.0](#to-110)
 - [To 1.0.0](#to-100)
   - [Requirements](#requirements)
   - [Enable and configure](#enable-and-configure)
@@ -10,6 +11,14 @@
   - [Breaking changes](#breaking-changes)
 
 ## Unreleased
+
+## To 1.1.0
+
+From **1.0.0**:
+
+```bash
+composer update nowo-tech/health-kit-bundle
+```
 
 No action needed: `ready.public` and `live.public` default to `true`, so responses are unchanged byte for byte.
 

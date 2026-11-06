@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-06
+
+`ready.public` / `live.public` (default true): when false, callers not allowed by the details rules get a 404 indistinguishable from an unknown URL, and no probe runs.
+
 ### Added
 
 - `ready.public` and `live.public` (bool, default `true` = unchanged behaviour). With `false`, a caller that the
