@@ -7,6 +7,7 @@ and invalid values fail the container compilation with the offending path in the
 
 - [Full reference with defaults](#full-reference-with-defaults)
 - [Global options](#global-options)
+- [Non-public endpoints (live.public / ready.public)](#non-public-endpoints-livepublic--readypublic)
 - [details — who sees probe details](#details--who-sees-probe-details)
 - [probes — built-in probes](#probes--built-in-probes)
   - [Shared probe settings](#shared-probe-settings)
@@ -28,8 +29,10 @@ nowo_health_kit:
     budget: 5.0                   # seconds per group (live / ready) (> 0)
     version: ''                   # shown by /health/live when not empty
     live:
+        public: true              # false = 404 for callers the details rules do not allow
         expose_client_ip: false   # add client_ip (Request::getClientIp(), trusted proxies applied)
     ready:
+        public: true              # false = 404 for callers the details rules do not allow
         public_cache_ttl: 5.0     # seconds the anonymous readiness answer is reused (0 = off)
         cache_pool: cache.app     # PSR-6 pool sharing it across PHP processes (null = per-worker memo only)
     details:
@@ -79,11 +82,47 @@ nowo_health_kit:
 | `default_timeout` | float `2.0`, > 0 | Timeout passed to probes that have no own timeout. A probe that takes longer is reported as `error` ("Timed out after …"). |
 | `budget` | float `5.0`, > 0 | Time a whole group may spend. Probes not started once it is spent are reported as `error` (or `degraded` when not critical). |
 | `version` | string `''` | Version string added to `/health/live` (`"version"`). Typical: `'%env(default::APP_VERSION)%'`. |
+| `live.public` | bool `true` | `false`: `/health/live` exists only for callers allowed by the [details rules](#details--who-sees-probe-details); everybody else gets a 404. See [Non-public endpoints](#non-public-endpoints-livepublic--readypublic). |
+| `ready.public` | bool `true` | `false`: `/health/ready` exists only for callers allowed by the details rules; everybody else gets a 404, no probe runs and nothing is cached for them. |
 | `live.expose_client_ip` | bool `false` | Add `"client_ip"` to `/health/live` — useful to verify `framework.trusted_proxies`. The caller only sees its own address. |
 | `ready.public_cache_ttl` | float `5.0`, ≥ 0 | Anonymous readiness answers are reused for this many seconds (status, healthy flag and timestamp only): per-worker memo plus `ready.cache_pool`. Detail callers always get a fresh run. |
 | `ready.cache_pool` | string `cache.app`, or null | PSR-6 pool (service id) storing the anonymous readiness answer for `public_cache_ttl`, so PHP-FPM and classic FrankenPHP processes share it instead of running the probes on every anonymous request. A missing service is ignored; a failing pool only disables sharing. Null: per-worker memo only (then rate-limit `/health/*` at the proxy under FPM / classic mode). |
 
-## details — who sees probe details
+## Non-public endpoints (live.public / ready.public)
+
+By default `/health/live` and `/health/ready` answer their status (`{"status":"ok"}`) to every caller. When only your
+own infrastructure needs an endpoint (for example a container healthcheck over loopback), hide it from everybody else:
+
+```yaml
+nowo_health_kit:
+    ready:
+        public: false   # /health/ready: loopback (no proxy headers) or Bearer token only
+    live:
+        public: true    # /health/live stays public (uptime probes)
+```
+
+With `public: false`, the caller must be allowed by the same rules that grant [details](#details--who-sees-probe-details)
+(`details.public`, `details.allowed_ips` with the forwarding-header rule, `details.token` / `details.token_provider`).
+Allowed callers get the detailed report, exactly as today. Everybody else gets:
+
+- **404**, never 401 / 403: the controller throws the same `NotFoundHttpException` the router throws for an unknown URL
+  (same message shape), so the host's error page and headers are those of any path without a route. A `POST` /
+  `PUT` / `OPTIONS` on the hidden path also gets that 404 instead of the router's 405 with `Allow: GET, HEAD`.
+- **no probe run, no cache access**: the decision is taken before the probes and before the anonymous readiness memo
+  and `ready.cache_pool` are read or written, so the answer does not depend on which probes exist or on their state.
+
+Examples with `ready.public: false` and the default `details.allowed_ips` (loopback):
+
+| Request | Answer |
+| --- | --- |
+| `curl http://127.0.0.1/health/ready` inside the container (no proxy headers) | 200 + detailed report |
+| `https://app.example.com/health/ready` through the host proxy (adds `X-Forwarded-For`) | 404 |
+| any client with `Authorization: Bearer <details.token>` | 200 + detailed report |
+
+`details.public: true` allows everybody, so it makes `public: false` moot (keep it to `when@dev` / `when@test`). With
+`details.trust_forwarded_ip: true` the allowlist is matched on `Request::getClientIp()`: only `framework.trusted_proxies`
+decide which forwarded addresses count (see the warning below).
+
 
 > **Reverse proxy on the same host or pod?** If a proxy (Caddy/nginx on the host, Varnish, `cloudflared`, an nginx
 > sidecar…) connects to the app over loopback, every client arrives with `REMOTE_ADDR = 127.0.0.1`. The bundle then

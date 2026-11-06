@@ -34,6 +34,10 @@ final class ConfigurationTest extends TestCase
         self::assertSame(5.0, $config['budget']);
         self::assertSame('', $config['version']);
         self::assertFalse($config['live']['expose_client_ip']);
+        self::assertTrue($config['live']['public']);
+        self::assertTrue($config['ready']['public']);
+        self::assertFalse($this->process(['ready' => ['public' => false]])['ready']['public']);
+        self::assertFalse($this->process(['live' => ['public' => false]])['live']['public']);
         self::assertSame(5.0, $config['ready']['public_cache_ttl']);
         self::assertSame('cache.app', $config['ready']['cache_pool']);
         self::assertNull($this->process(['ready' => ['cache_pool' => null]])['ready']['cache_pool']);
