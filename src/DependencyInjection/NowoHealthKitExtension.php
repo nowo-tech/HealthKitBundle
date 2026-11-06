@@ -7,6 +7,7 @@ namespace Nowo\HealthKitBundle\DependencyInjection;
 use Nowo\HealthKitBundle\Attribute\AsHealthProbe;
 use Nowo\HealthKitBundle\Controller\HealthController;
 use Nowo\HealthKitBundle\Controller\MetricsController;
+use Nowo\HealthKitBundle\EventListener\HiddenEndpointListener;
 use Nowo\HealthKitBundle\Health\ErrorSanitizer;
 use Nowo\HealthKitBundle\Health\HealthChecker;
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
@@ -58,7 +59,7 @@ final class NowoHealthKitExtension extends Extension
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
-        /** @var array{default_timeout: float, budget: float, version: string, live: array{expose_client_ip: bool}, ready: array{public_cache_ttl: float, cache_pool: string|null}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
+        /** @var array{default_timeout: float, budget: float, version: string, live: array{public: bool, expose_client_ip: bool}, ready: array{public: bool, public_cache_ttl: float, cache_pool: string|null}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
         $config = $this->processConfiguration(new Configuration(), $configs);
 
         $container->setParameter('nowo_health_kit.default_timeout', $config['default_timeout']);
@@ -152,9 +153,9 @@ final class NowoHealthKitExtension extends Extension
      */
     private function registerControllers(array $config, ContainerBuilder $container): void
     {
-        /** @var array{expose_client_ip: bool} $live */
+        /** @var array{public: bool, expose_client_ip: bool} $live */
         $live = $config['live'];
-        /** @var array{public_cache_ttl: float, cache_pool: string|null} $ready */
+        /** @var array{public: bool, public_cache_ttl: float, cache_pool: string|null} $ready */
         $ready = $config['ready'];
         /** @var array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool} $metrics */
         $metrics = $config['metrics'];
@@ -168,10 +169,25 @@ final class NowoHealthKitExtension extends Extension
                 $live['expose_client_ip'],
                 $ready['public_cache_ttl'],
                 $ready['cache_pool'] === null || $ready['cache_pool'] === '' ? null : new Reference($ready['cache_pool'], ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                $live['public'],
+                $ready['public'],
             ])
             ->setPublic(true)
             ->setAutoconfigured(false)
             ->addTag('controller.service_arguments'));
+
+        $hidden = array_keys(array_filter(['live' => !$live['public'], 'ready' => !$ready['public']]));
+        if ($hidden !== []) {
+            $container->register('nowo_health_kit.hidden_endpoint_listener', HiddenEndpointListener::class)
+                ->setArguments([
+                    new Reference('nowo_health_kit.details_access_policy'),
+                    new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                    $hidden,
+                ])
+                // Right after RouterListener (32), before the firewall (8): also catches the trailing-slash redirect.
+                ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31])
+                ->addTag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 16]);
+        }
 
         $container->register('nowo_health_kit.prometheus_formatter', PrometheusTextFormatter::class);
         $container->setAlias(PrometheusTextFormatter::class, 'nowo_health_kit.prometheus_formatter');

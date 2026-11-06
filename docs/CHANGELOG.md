@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ready.public` and `live.public` (bool, default `true` = unchanged behaviour). With `false`, a caller that the
+  details rules do not allow (`details.allowed_ips` with the forwarding-header rule, `details.token` /
+  `details.token_provider`, `details.public`) gets the same 404 as an unknown URL (`NotFoundHttpException`, router
+  message shape): no probe runs and the anonymous readiness memo / `ready.cache_pool` are neither read nor written for
+  them. Allowed callers get the detailed report. `Http\HiddenEndpoint` builds the 404 (outer and previous messages as
+  the router's); `EventListener\HiddenEndpointListener` (registered only when an endpoint is non-public) throws it at
+  `kernel.request` priority 31 for requests routed to a hidden endpoint (bundle route or `HealthController` action,
+  trailing-slash 301 redirect included) and turns the router's 405 into it after replaying the path as a GET (so
+  `%`-encoded paths are covered). Requested by Symfony Beacon (readiness kept off the internet).
+
+### Changed
+
+- `HealthController::__construct()` takes two trailing optional arguments `$livePublic` and `$readyPublic` (default
+  `true`); `/health/live` now evaluates the details policy before running the `live` probes (same responses).
+
 ## [1.0.0] - 2026-10-31
 
 First release: liveness/readiness endpoints with pluggable probes (Doctrine, Redis, Messenger, FrankenPHP), allowlist/token-gated details, token-guarded Prometheus /metrics, runtime token providers, extracted and generalised from the Symfony Beacon health and metrics code. See [UPGRADING](https://github.com/nowo-tech/HealthKitBundle/blob/main/docs/UPGRADING.md#to-100).

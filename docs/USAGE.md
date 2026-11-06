@@ -45,6 +45,9 @@ are `stateless` (no session is started).
 `/health/live` adds `"version"` when `version` is set and `"client_ip"` when `live.expose_client_ip` is true. Public
 `/health/ready` answers are reused for `ready.public_cache_ttl` seconds (per-worker memo + `ready.cache_pool`).
 
+With `ready.public: false` (or `live.public: false`) there is no public answer: callers not allowed by the details
+rules get a 404, as for an unknown URL ([CONFIGURATION](CONFIGURATION.md#non-public-endpoints-livepublic--readypublic)).
+
 ### Detailed answer
 
 For allowlisted IPs, `Authorization: Bearer <details.token>` callers, or everybody with `details.public: true`:

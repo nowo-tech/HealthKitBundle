@@ -51,6 +51,7 @@ A bundle safe under **B** is safe under **A**, classic mode and PHP-FPM.
 | `Nowo\HealthKitBundle\Controller\MetricsController` | none (`readonly`) | ✅ | ✅ |
 | `nowo_health_kit.health_checker` (`HealthChecker`) | none (`readonly`); reports built per call | ✅ | ✅ |
 | `nowo_health_kit.details_access_policy` | none (`readonly`) | ✅ | ✅ |
+| `nowo_health_kit.hidden_endpoint_listener` (`HiddenEndpointListener`, only with `live.public` / `ready.public` false) | none (`readonly`); on a 405 it swaps the router context method to GET for one match and restores it in `finally` (`@igor-ignore` with justification; RouterListener also resets the context per request) | ✅ | ✅ |
 | `nowo_health_kit.metrics_collector`, `nowo_health_kit.prometheus_formatter`, `nowo_health_kit.metrics.probe_provider` | none | ✅ | ✅ |
 | `nowo_health_kit.frankenphp_runtime` | none; reads the current main request per call | ✅ | ✅ |
 | `nowo_health_kit.probe.*` (Doctrine, Redis, Messenger, FrankenPHP) | none (`readonly`) | ✅ | ✅ |

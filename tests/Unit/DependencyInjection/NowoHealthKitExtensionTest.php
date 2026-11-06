@@ -8,6 +8,7 @@ use Nowo\HealthKitBundle\Attribute\AsHealthProbe;
 use Nowo\HealthKitBundle\Controller\HealthController;
 use Nowo\HealthKitBundle\Controller\MetricsController;
 use Nowo\HealthKitBundle\DependencyInjection\NowoHealthKitExtension;
+use Nowo\HealthKitBundle\EventListener\HiddenEndpointListener;
 use Nowo\HealthKitBundle\Metrics\MetricsProviderInterface;
 use Nowo\HealthKitBundle\Probe\HealthProbeInterface;
 use Nowo\HealthKitBundle\Tests\Fixtures\QueueProbe;
@@ -128,5 +129,34 @@ final class NowoHealthKitExtensionTest extends TestCase
 
         self::assertNull($this->load(['ready' => ['cache_pool' => null]])->getDefinition(HealthController::class)->getArgument(6));
         self::assertNull($this->load(['ready' => ['cache_pool' => '']])->getDefinition(HealthController::class)->getArgument(6));
+    }
+
+    #[Test]
+    public function publicOptionsReachTheControllerAndRegisterTheListenerOnlyWhenHidden(): void
+    {
+        $default = $this->load();
+        self::assertTrue($default->getDefinition(HealthController::class)->getArgument(7));
+        self::assertTrue($default->getDefinition(HealthController::class)->getArgument(8));
+        self::assertFalse($default->hasDefinition('nowo_health_kit.hidden_endpoint_listener'));
+
+        $hidden     = $this->load(['live' => ['public' => false], 'ready' => ['public' => false]]);
+        $controller = $hidden->getDefinition(HealthController::class);
+        self::assertFalse($controller->getArgument(7));
+        self::assertFalse($controller->getArgument(8));
+        $listener = $hidden->getDefinition('nowo_health_kit.hidden_endpoint_listener');
+        self::assertSame(HiddenEndpointListener::class, $listener->getClass());
+        self::assertSame('nowo_health_kit.details_access_policy', (string) $listener->getArgument(0));
+        $router = $listener->getArgument(1);
+        self::assertInstanceOf(Reference::class, $router);
+        self::assertSame('router', (string) $router);
+        self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $router->getInvalidBehavior());
+        self::assertSame(['live', 'ready'], $listener->getArgument(2));
+        self::assertSame([
+            ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31],
+            ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 16],
+        ], $listener->getTag('kernel.event_listener'));
+
+        self::assertSame(['ready'], $this->load(['ready' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
+        self::assertSame(['live'], $this->load(['live' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
     }
 }

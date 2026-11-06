@@ -6,11 +6,13 @@ namespace Nowo\HealthKitBundle\Controller;
 
 use Nowo\HealthKitBundle\Health\HealthChecker;
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
+use Nowo\HealthKitBundle\Http\HiddenEndpoint;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Throwable;
 
@@ -31,6 +33,9 @@ use function is_string;
  * shared by every PHP process, so PHP-FPM and classic mode benefit too (audit BX L2). Both hold a status, a healthy
  * flag and a timestamp only (no request or user data). Without a pool, FPM/classic processes run the probes on every
  * anonymous request — rate-limit `/health/*` at the proxy then.
+ *
+ * Non-public endpoints (`live.public` / `ready.public` false): a caller the details rules do not allow gets the same
+ * 404 as an unknown URL ({@see HiddenEndpoint}) before any probe runs or any cache is read or written.
  */
 final class HealthController
 {
@@ -47,6 +52,8 @@ final class HealthController
      * @param bool $exposeClientIp include the caller IP (trusted proxies applied) in `/health/live`
      * @param float $publicCacheTtl seconds the public readiness answer is reused (0 disables memo and pool)
      * @param CacheItemPoolInterface|null $publicCache shared pool for the public readiness answer (null: worker memo only)
+     * @param bool $livePublic answer `/health/live` to callers the details rules do not allow (false: 404 for them)
+     * @param bool $readyPublic answer `/health/ready` to callers the details rules do not allow (false: 404 for them)
      */
     public function __construct(
         private readonly HealthChecker $checker,
@@ -56,6 +63,8 @@ final class HealthController
         private readonly bool $exposeClientIp = false,
         private readonly float $publicCacheTtl = 5.0,
         private readonly ?CacheItemPoolInterface $publicCache = null,
+        private readonly bool $livePublic = true,
+        private readonly bool $readyPublic = true,
     ) {
     }
 
@@ -64,13 +73,19 @@ final class HealthController
      *
      * @param Request $request incoming request
      *
+     * @throws NotFoundHttpException when `live.public` is false and the caller is not allowed
+     *
      * @return JsonResponse 200, or 503 when a critical live probe fails
      */
     #[Route('/health/live', name: 'nowo_health_kit_live', methods: ['GET', 'HEAD'], stateless: true)]
     public function live(Request $request): JsonResponse
     {
+        $allowed = $this->policy->allows($request);
+        if (!$allowed && !$this->livePublic) {
+            throw HiddenEndpoint::notFound($request);
+        }
         $report  = $this->checker->check('live');
-        $payload = $this->policy->allows($request) ? $report->toDetailedArray() : ['status' => $report->status->value];
+        $payload = $allowed ? $report->toDetailedArray() : ['status' => $report->status->value];
         if ($this->version !== '') {
             $payload['version'] = $this->version;
         }
@@ -86,6 +101,8 @@ final class HealthController
      *
      * @param Request $request incoming request
      *
+     * @throws NotFoundHttpException when `ready.public` is false and the caller is not allowed
+     *
      * @return JsonResponse 200 when ok or degraded, 503 when a critical probe fails
      */
     #[Route('/health/ready', name: 'nowo_health_kit_ready', methods: ['GET', 'HEAD'], stateless: true)]
@@ -95,6 +112,9 @@ final class HealthController
             $report = $this->checker->check('ready');
 
             return $this->respond($report->toDetailedArray(), $report->isHealthy());
+        }
+        if (!$this->readyPublic) {
+            throw HiddenEndpoint::notFound($request);
         }
 
         $now    = (float) $this->clock->now()->format('U.u');

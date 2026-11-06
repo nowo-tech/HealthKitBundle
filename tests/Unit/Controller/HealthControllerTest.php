@@ -18,6 +18,7 @@ use RuntimeException;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 #[CoversClass(HealthController::class)]
 final class HealthControllerTest extends TestCase
@@ -144,5 +145,71 @@ final class HealthControllerTest extends TestCase
 
         self::assertSame(200, $this->pooled($pool)->ready($this->publicRequest())->getStatusCode());
         self::assertSame(1, $this->calls);
+    }
+
+    private function hidden(CacheItemPoolInterface $pool, bool $livePublic, bool $readyPublic): HealthController
+    {
+        $this->clock = new MockClock();
+        $probe       = new StubProbe(function (): ProbeResult {
+            ++$this->calls;
+
+            return ProbeResult::ok();
+        });
+        $checker = new HealthChecker([new RegisteredProbe('db', $probe, ['ready', 'live'], true, 1.0)], $this->clock);
+        $policy  = new DetailsAccessPolicy(['127.0.0.1', '::1'], 'details-token-0123456789');
+
+        return new HealthController($checker, $policy, $this->clock, 'v1', true, 5.0, $pool, $livePublic, $readyPublic);
+    }
+
+    /**
+     * @param callable(): mixed $call
+     */
+    private function assertNotFound(callable $call): void
+    {
+        try {
+            $call();
+            self::fail('Expected a 404.');
+        } catch (NotFoundHttpException $e) {
+            self::assertSame(404, $e->getStatusCode());
+        }
+    }
+
+    #[Test]
+    public function nonPublicReadinessIsNotFoundForUnknownCallersWithoutProbeOrCache(): void
+    {
+        $pool       = new ArrayAdapter();
+        $controller = $this->hidden($pool, true, false);
+
+        $this->assertNotFound(fn (): mixed => $controller->ready($this->publicRequest()));
+        // Loopback behind a proxy (forwarding header present): the IP rule does not apply.
+        $this->assertNotFound(static fn (): mixed => $controller->ready(Request::create('/health/ready', server: ['REMOTE_ADDR' => '127.0.0.1', 'HTTP_X_FORWARDED_FOR' => '127.0.0.1'])));
+        $this->assertNotFound(static fn (): mixed => $controller->ready(Request::create('/health/ready', server: ['REMOTE_ADDR' => '203.0.113.9', 'HTTP_AUTHORIZATION' => 'Bearer wrong-token-wrong-token'])));
+        self::assertSame(0, $this->calls);
+        self::assertFalse($pool->hasItem(HealthController::CACHE_KEY));
+
+        $loopback = $controller->ready(Request::create('/health/ready', server: ['REMOTE_ADDR' => '127.0.0.1']));
+        self::assertSame(200, $loopback->getStatusCode());
+        self::assertStringContainsString('"checks":{"db":', (string) $loopback->getContent());
+        $bearer = $controller->ready(Request::create('/health/ready', server: ['REMOTE_ADDR' => '203.0.113.9', 'HTTP_AUTHORIZATION' => 'Bearer details-token-0123456789']));
+        self::assertSame(200, $bearer->getStatusCode());
+        self::assertSame(2, $this->calls);
+        self::assertFalse($pool->hasItem(HealthController::CACHE_KEY));
+
+        // live stays public.
+        self::assertSame('{"status":"ok","version":"v1","client_ip":"203.0.113.9"}', $controller->live($this->publicRequest())->getContent());
+    }
+
+    #[Test]
+    public function nonPublicLivenessIsNotFoundForUnknownCallers(): void
+    {
+        $controller = $this->hidden(new ArrayAdapter(), false, true);
+
+        $this->assertNotFound(fn (): mixed => $controller->live($this->publicRequest()));
+        self::assertSame(0, $this->calls);
+        self::assertStringContainsString('"checks":{"db":', (string) $controller->live(Request::create('/health/live', server: ['REMOTE_ADDR' => '::1']))->getContent());
+        self::assertSame(1, $this->calls);
+
+        // ready stays public.
+        self::assertSame('{"status":"ok"}', $controller->ready($this->publicRequest())->getContent());
     }
 }
