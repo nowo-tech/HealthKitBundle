@@ -150,10 +150,13 @@ final class NowoHealthKitExtensionTest extends TestCase
         self::assertInstanceOf(Reference::class, $router);
         self::assertSame('router', (string) $router);
         self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $router->getInvalidBehavior());
-        self::assertSame(['nowo_health_kit_live', 'nowo_health_kit_ready'], $listener->getArgument(2));
-        self::assertSame([['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 16]], $listener->getTag('kernel.event_listener'));
+        self::assertSame(['live', 'ready'], $listener->getArgument(2));
+        self::assertSame([
+            ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31],
+            ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 16],
+        ], $listener->getTag('kernel.event_listener'));
 
-        self::assertSame(['nowo_health_kit_ready'], $this->load(['ready' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
-        self::assertSame(['nowo_health_kit_live'], $this->load(['live' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
+        self::assertSame(['ready'], $this->load(['ready' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
+        self::assertSame(['live'], $this->load(['live' => ['public' => false]])->getDefinition('nowo_health_kit.hidden_endpoint_listener')->getArgument(2));
     }
 }

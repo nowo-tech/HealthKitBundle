@@ -10,6 +10,7 @@ use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * `live.public` / `ready.public` false in a real kernel: unknown callers get the same 404 as an unknown URL.
@@ -96,6 +97,53 @@ final class NonPublicEndpointsTest extends KernelTestCase
         // live stays public and keeps its 405.
         self::assertSame(['status' => 'ok'], $this->json($this->send($kernel, 'GET', '/health/live')));
         self::assertSame(405, $this->send($kernel, 'POST', '/health/live')->getStatusCode());
+    }
+
+    #[Test]
+    public function routerNormalisationDoesNotRevealTheHiddenEndpoint(): void
+    {
+        $kernel = $this->bootKernel(['ready' => ['public' => false], 'live' => ['public' => false], 'details' => ['token' => self::TOKEN]]);
+
+        // Trailing slash (GET / HEAD): the redirectable matcher would answer 301 to /health/ready (audit GS-L1).
+        foreach (['GET', 'HEAD'] as $method) {
+            $unknown = $this->send($kernel, $method, '/no-such-endpoint/');
+            foreach (['/health/ready/', '/health/ready//', '/health/live/'] as $uri) {
+                $this->assertLikeUnknownUrl($unknown, $this->send($kernel, $method, $uri), $method, $uri);
+            }
+        }
+        $redirect = $this->send($kernel, 'GET', '/health/ready/', ['REMOTE_ADDR' => '127.0.0.1']);
+        self::assertSame(301, $redirect->getStatusCode());
+        self::assertSame('http://localhost/health/ready', $redirect->headers->get('Location'));
+
+        // Percent-encoded path with another method: the router decodes it and would answer 405 (audit GS-L2).
+        foreach ([['POST', '/health/%72eady'], ['DELETE', '/health/re%61dy'], ['PUT', '/health/%6Cive']] as [$method, $uri]) {
+            $this->assertLikeUnknownUrl($this->send($kernel, $method, '/no-such-endpoint'), $this->send($kernel, $method, $uri), $method, $uri);
+        }
+        $allowed = $this->send($kernel, 'POST', '/health/%72eady', ['HTTP_AUTHORIZATION' => 'Bearer ' . self::TOKEN]);
+        self::assertSame(405, $allowed->getStatusCode());
+        self::assertSame('GET, HEAD', $allowed->headers->get('Allow'));
+        self::assertSame(200, $this->send($kernel, 'GET', '/health/%72eady', ['REMOTE_ADDR' => '127.0.0.1'])->getStatusCode());
+
+        // Referer is echoed in the message like the router does; format suffixes have no route at all.
+        $referred = $this->send($kernel, 'GET', '/health/ready', ['HTTP_REFERER' => 'https://elsewhere.test/']);
+        $this->assertLikeUnknownUrl($this->send($kernel, 'GET', '/no-such-endpoint', ['HTTP_REFERER' => 'https://elsewhere.test/']), $referred, 'GET', '/health/ready');
+        self::assertStringContainsString('No route found for "GET http://localhost/health/ready" (from "https://elsewhere.test/")', (string) $referred->getContent());
+        foreach (['/health/ready.json', '/health/live.json'] as $uri) {
+            $this->assertLikeUnknownUrl($this->send($kernel, 'GET', '/no-such-endpoint'), $this->send($kernel, 'GET', $uri), 'GET', $uri);
+        }
+    }
+
+    #[Test]
+    public function hostRoutesToTheControllerAreHiddenToo(): void
+    {
+        $kernel = $this->bootKernel(['ready' => ['public' => false]], [], static function (RoutingConfigurator $routes): void {
+            $routes->import('@NowoHealthKitBundle/config/routes/health.yaml');
+            $routes->add('app_ready', '/internal/ready')->controller(HealthController::class . '::ready')->methods(['GET', 'HEAD']);
+        });
+
+        $this->assertLikeUnknownUrl($this->send($kernel, 'GET', '/no-such-endpoint'), $this->send($kernel, 'GET', '/internal/ready'), 'GET', '/internal/ready');
+        $this->assertLikeUnknownUrl($this->send($kernel, 'POST', '/no-such-endpoint'), $this->send($kernel, 'POST', '/internal/ready'), 'POST', '/internal/ready');
+        self::assertSame(200, $this->send($kernel, 'GET', '/internal/ready', ['REMOTE_ADDR' => '127.0.0.1'])->getStatusCode());
     }
 
     #[Test]

@@ -176,20 +176,16 @@ final class NowoHealthKitExtension extends Extension
             ->setAutoconfigured(false)
             ->addTag('controller.service_arguments'));
 
-        $hiddenRoutes = [];
-        if (!$live['public']) {
-            $hiddenRoutes[] = 'nowo_health_kit_live';
-        }
-        if (!$ready['public']) {
-            $hiddenRoutes[] = 'nowo_health_kit_ready';
-        }
-        if ($hiddenRoutes !== []) {
+        $hidden = array_keys(array_filter(['live' => !$live['public'], 'ready' => !$ready['public']]));
+        if ($hidden !== []) {
             $container->register('nowo_health_kit.hidden_endpoint_listener', HiddenEndpointListener::class)
                 ->setArguments([
                     new Reference('nowo_health_kit.details_access_policy'),
                     new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                    $hiddenRoutes,
+                    $hidden,
                 ])
+                // Right after RouterListener (32), before the firewall (8): also catches the trailing-slash redirect.
+                ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 31])
                 ->addTag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 16]);
         }
 

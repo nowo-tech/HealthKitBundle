@@ -11,9 +11,11 @@ All notable changes to this project are documented here. The format follows
   details rules do not allow (`details.allowed_ips` with the forwarding-header rule, `details.token` /
   `details.token_provider`, `details.public`) gets the same 404 as an unknown URL (`NotFoundHttpException`, router
   message shape): no probe runs and the anonymous readiness memo / `ready.cache_pool` are neither read nor written for
-  them. Allowed callers get the detailed report. `Http\HiddenEndpoint` builds the 404; `EventListener\HiddenEndpointListener`
-  (registered only when an endpoint is non-public) turns the router's 405 on the hidden path into that 404 for those
-  callers, so other methods do not reveal the route either. Requested by Symfony Beacon (readiness kept off the internet).
+  them. Allowed callers get the detailed report. `Http\HiddenEndpoint` builds the 404 (outer and previous messages as
+  the router's); `EventListener\HiddenEndpointListener` (registered only when an endpoint is non-public) throws it at
+  `kernel.request` priority 31 for requests routed to a hidden endpoint (bundle route or `HealthController` action,
+  trailing-slash 301 redirect included) and turns the router's 405 into it after replaying the path as a GET (so
+  `%`-encoded paths are covered). Requested by Symfony Beacon (readiness kept off the internet).
 
 ### Changed
 

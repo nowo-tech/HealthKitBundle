@@ -105,9 +105,12 @@ With `public: false`, the caller must be allowed by the same rules that grant [d
 (`details.public`, `details.allowed_ips` with the forwarding-header rule, `details.token` / `details.token_provider`).
 Allowed callers get the detailed report, exactly as today. Everybody else gets:
 
-- **404**, never 401 / 403: the controller throws the same `NotFoundHttpException` the router throws for an unknown URL
-  (same message shape), so the host's error page and headers are those of any path without a route. A `POST` /
-  `PUT` / `OPTIONS` on the hidden path also gets that 404 instead of the router's 405 with `Allow: GET, HEAD`.
+- **404**, never 401 / 403: the same `NotFoundHttpException` the router throws for an unknown URL (same message
+  shape), so the host's error page and headers are those of any path without a route. A `kernel.request` listener
+  (priority 31, right after the router and before the firewall) throws it as soon as the request is routed to a
+  hidden endpoint, including the router's trailing-slash redirect (`/health/ready/` would otherwise answer 301), and
+  a `kernel.exception` listener replays a 405 (`POST` / `PUT` / `OPTIONS`…, also on percent-encoded paths such as
+  `/health/%72eady`) through the router as a GET and turns it into that 404. The controller checks again.
 - **no probe run, no cache access**: the decision is taken before the probes and before the anonymous readiness memo
   and `ready.cache_pool` are read or written, so the answer does not depend on which probes exist or on their state.
 
@@ -122,6 +125,21 @@ Examples with `ready.public: false` and the default `details.allowed_ips` (loopb
 `details.public: true` allows everybody, so it makes `public: false` moot (keep it to `when@dev` / `when@test`). With
 `details.trust_forwarded_ip: true` the allowlist is matched on `Request::getClientIp()`: only `framework.trusted_proxies`
 decide which forwarded addresses count (see the warning below).
+
+> **Check from outside after enabling it.** A same-host proxy that connects over loopback and adds **none** of
+> `Forwarded`, `X-Forwarded-For` or `X-Real-IP` (nginx `proxy_pass` without `proxy_set_header`, a tunnel that only
+> sends `CF-Connecting-IP`…) makes every Internet client look like `127.0.0.1`, so the "hidden" endpoint (and its
+> details) is answered to everybody. Run `curl -i https://<public-host>/health/ready` and expect 404; otherwise make
+> the proxy send `X-Forwarded-For`, or set `details.allowed_ips: []` and call the endpoint with the token.
+
+Routes covered: the bundle routes (`nowo_health_kit_live` / `nowo_health_kit_ready`, with any `prefix:` on the
+import) and any host route whose controller is `HealthController::live` / `::ready` (GET/HEAD and other methods).
+One gap remains for host-defined routes: the router's trailing-slash redirect of such a route (`/internal/ready/` →
+301) points at the redirect controller and carries only the host route name, so it is not recognised. Import the
+bundle routes (with `prefix:` if needed) rather than declaring your own routes to the controller.
+
+Debug mode (`kernel.debug`) is not covered: the exception page shows the stack trace (`HiddenEndpoint` ←
+`HiddenEndpointListener`) and log lines name other files. Never expose a debug kernel to the Internet.
 
 
 > **Reverse proxy on the same host or pod?** If a proxy (Caddy/nginx on the host, Varnish, `cloudflared`, an nginx

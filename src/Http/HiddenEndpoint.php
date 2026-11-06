@@ -8,7 +8,9 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 
+use function in_array;
 use function is_string;
+use function rtrim;
 use function sprintf;
 
 /**
@@ -16,7 +18,9 @@ use function sprintf;
  *
  * The exception mirrors the one the router throws for an unknown URL (same class, same message shape, a
  * {@see ResourceNotFoundException} as previous), so the host's error renderer answers exactly as it does for any
- * path that has no route: the caller cannot tell the endpoint exists.
+ * path that has no route: the caller cannot tell the endpoint exists. The previous exception carries the path the
+ * redirectable matcher reports last: for GET / HEAD it retries with the trailing slash toggled (`/health/ready` →
+ * `/health/ready/`, `/health/ready/` → `/health/ready`), other methods keep the path as sent.
  */
 final class HiddenEndpoint
 {
@@ -35,6 +39,11 @@ final class HiddenEndpoint
             $message .= sprintf(' (from "%s")', $referer);
         }
 
-        return new NotFoundHttpException($message, new ResourceNotFoundException(sprintf('No routes found for "%s".', $request->getPathInfo())));
+        $path = $request->getPathInfo();
+        if (in_array($request->getMethod(), ['GET', 'HEAD'], true) && '' !== $trimmed = rtrim($path, '/')) {
+            $path = $trimmed === $path ? $path . '/' : $trimmed;
+        }
+
+        return new NotFoundHttpException($message, new ResourceNotFoundException(sprintf('No routes found for "%s".', $path)));
     }
 }
