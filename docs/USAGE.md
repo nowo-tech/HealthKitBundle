@@ -15,6 +15,9 @@
   - [Prometheus scrape config](#prometheus-scrape-config)
 - [Tokens stored in application settings](#tokens-stored-in-application-settings)
 - [Using the checker in your own code](#using-the-checker-in-your-own-code)
+- [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
+  - [Keeping your domain free of the bundle](#keeping-your-domain-free-of-the-bundle)
+  - [Known limitations](#known-limitations)
 - [Demo smoke](#demo-smoke)
 
 ## Endpoints and JSON contract
@@ -226,6 +229,43 @@ $report->toDetailedArray();   // same shape as the detailed JSON answer
 ```
 
 Do not expose `toDetailedArray()` on a public page.
+
+## Using it from a DDD / hexagonal application
+
+HealthKitBundle is an operational infrastructure adapter: HTTP health and metrics endpoints plus probes. It has no
+entities, no persistence and no ORM code; the only Doctrine use is the optional DBAL `SELECT 1` probe.
+
+### Keeping your domain free of the bundle
+
+- Probes and metrics providers are adapters: put them in your infrastructure layer and let them call your
+  application ports, not the other way round.
+
+```php
+// Infrastructure
+#[AsHealthProbe(name: 'payments', groups: ['ready'], critical: false, timeout: 1.0)]
+final readonly class PaymentGatewayProbe implements HealthProbeInterface
+{
+    public function __construct(private PaymentGateway $gateway) {} // your application port
+
+    public function check(float $timeout): ProbeResult
+    {
+        return $this->gateway->isReachable($timeout)
+            ? ProbeResult::ok()
+            : ProbeResult::degraded('Payment gateway unreachable');
+    }
+}
+```
+
+- Domain counters reach Prometheus through a `MetricsProviderInterface` that reads your own read model or counter
+  store (see "Writing a metrics provider").
+- Tokens kept in your settings store plug in through `DetailsTokenProviderInterface` / `MetricsTokenProviderInterface`.
+- Keep `ProbeResult::$message` and `$data` free of domain secrets or personal data: the detailed answer can be read
+  by anyone allowed by the details rules.
+
+### Known limitations
+
+- No event is dispatched when a probe changes status; poll `HealthChecker::check()` if you need to react.
+- `HealthChecker` has no interface; wrap it behind your own port if application code depends on it.
 
 ## Demo smoke
 
