@@ -37,10 +37,10 @@ test.describe('Health Kit screenshots (full demo frame)', () => {
 
   test('metrics — token-guarded Prometheus scrape', async ({ page }) => {
     await page.goto('/');
-    const scrape = page.locator('section.card').filter({ hasText: 'Scraper — GET /metrics' });
+    const scrape = page.locator('section.nowo-ui-card').filter({ hasText: 'Scraper — GET /metrics' });
     await scrape.scrollIntoViewIfNeeded();
     await page.evaluate(() => {
-      const el = Array.from(document.querySelectorAll('section.card')).find((c) => c.textContent?.includes('Scraper — GET /metrics'));
+      const el = Array.from(document.querySelectorAll('section.nowo-ui-card')).find((c) => c.textContent?.includes('Scraper — GET /metrics'));
       if (el) {
         window.scrollTo(0, (el as HTMLElement).offsetTop - 70);
       }

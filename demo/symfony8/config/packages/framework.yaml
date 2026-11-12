@@ -2,6 +2,7 @@
 framework:
     secret: '%env(APP_SECRET)%'
     session: false
+    assets: ~
     # The demo page renders the bundle endpoints through sub-requests with the real controllers.
     trusted_proxies: '%env(default::TRUSTED_PROXIES)%'
 
