@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Tests
+
+- Kept-alive kernel test (1,200 requests, two callers, memory bound) and refreshed `docs/FRANKENPHP-WORKER-AUDIT.md` (REQ-RUNTIME-002).
+
 ## [1.1.0] - 2026-11-06
 
 `ready.public` / `live.public` (default true): when false, callers not allowed by the details rules get a 404 indistinguishable from an unknown URL, and no probe runs.
