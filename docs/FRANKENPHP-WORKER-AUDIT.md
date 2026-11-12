@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/health-kit-bundle` (`symfony-bundle`) |
-| Audited revision | `1.0.0` (unreleased, branch `feat/1.0.0`) |
-| Audit date | 2026-10-31 |
+| Audited revision | `1.1.0` (re-checked 2026-11-12) |
+| Audit date | 2026-10-31, refreshed 2026-11-12 |
 | Method | Manual review of every file under `src/`; PHPStan `ruleset-classic` + `ruleset-worker-strict` + `ruleset-hardening`; Igor (`composer igor`, 0 KO / 0 WARN); demo run in worker mode |
 | **Verdict** | ✅ **Viable** — services are immutable except one deliberate per-worker memo (anonymous readiness status) that holds no request or user data |
 
@@ -56,6 +56,17 @@ A bundle safe under **B** is safe under **A**, classic mode and PHP-FPM.
 | `nowo_health_kit.frankenphp_runtime` | none; reads the current main request per call | ✅ | ✅ |
 | `nowo_health_kit.probe.*` (Doctrine, Redis, Messenger, FrankenPHP) | none (`readonly`) | ✅ | ✅ |
 | `nowo_health_kit.error_sanitizer` | none | ✅ | ✅ |
+
+## Kept-alive kernel test
+
+`tests/Integration/Kernel/WorkerKeptAliveKernelTest.php::alternatingCallersNeverSeeEachOtherAndMemoryStaysFlat`
+boots ONE kernel and drives `http_kernel` `handle()` + `terminate()` 1,200 times (400 iterations of `/health/live`,
+`/health/ready`, `/metrics`), alternating an anonymous public caller and an allowlisted caller, never calling
+`services_resetter` or `kernel.reset`. Each response carries only its own caller's data (client IP, details, metrics
+token state) and memory growth after warm-up stays under 4 MiB.
+
+The bundle is **safe with kernel reset false**. Rule 7: the bundle never flushes or clears the host's default entity
+manager; the Doctrine probe only pings the DBAL connections it is given.
 
 ## Findings
 
