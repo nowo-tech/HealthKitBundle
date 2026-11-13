@@ -19,7 +19,7 @@ use function substr;
  * class only) and reported through `health_kit_metrics_provider_up{provider="…"} 0`; families sharing a name and
  * type are merged, a name reused with another type is dropped (the first one wins).
  */
-final readonly class MetricsCollector
+final readonly class MetricsCollector implements MetricsCollectorInterface
 {
     private LoggerInterface $logger;
 

@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.2.0](#to-120)
 - [To 1.1.0](#to-110)
 - [To 1.0.0](#to-100)
   - [Requirements](#requirements)
@@ -11,6 +12,16 @@
   - [Breaking changes](#breaking-changes)
 
 ## Unreleased
+
+## To 1.2.0
+
+From **1.1.0**: additive, no action needed.
+
+```bash
+composer update nowo-tech/health-kit-bundle
+```
+
+`HealthChecker` and `MetricsCollector` now implement `HealthCheckerInterface` and `MetricsCollectorInterface`, aliased in the container, and the controllers depend on the interfaces. Type-hint the interfaces in new code; the class ids keep working. To replace one, point the interface alias to your own service.
 
 ## To 1.1.0
 

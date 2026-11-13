@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Nowo\HealthKitBundle\Controller;
 
 use Nowo\HealthKitBundle\Http\BearerToken;
-use Nowo\HealthKitBundle\Metrics\MetricsCollector;
+use Nowo\HealthKitBundle\Metrics\MetricsCollectorInterface;
 use Nowo\HealthKitBundle\Metrics\MetricsTokenProviderInterface;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
 use Psr\Log\LoggerInterface;
@@ -29,7 +29,7 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 final readonly class MetricsController
 {
     /**
-     * @param MetricsCollector $collector provider aggregator
+     * @param MetricsCollectorInterface $collector provider aggregator
      * @param PrometheusTextFormatter $formatter exposition formatter
      * @param bool $enabled `metrics.enabled`
      * @param string|null $token `metrics.token`
@@ -39,7 +39,7 @@ final readonly class MetricsController
      * @param LoggerInterface|null $logger logger for token provider failures (class names only)
      */
     public function __construct(
-        private MetricsCollector $collector,
+        private MetricsCollectorInterface $collector,
         private PrometheusTextFormatter $formatter,
         private bool $enabled = false,
         private ?string $token = null,

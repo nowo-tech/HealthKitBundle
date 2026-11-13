@@ -9,6 +9,10 @@ use Nowo\HealthKitBundle\Controller\HealthController;
 use Nowo\HealthKitBundle\Controller\MetricsController;
 use Nowo\HealthKitBundle\DependencyInjection\NowoHealthKitExtension;
 use Nowo\HealthKitBundle\EventListener\HiddenEndpointListener;
+use Nowo\HealthKitBundle\Health\HealthChecker;
+use Nowo\HealthKitBundle\Health\HealthCheckerInterface;
+use Nowo\HealthKitBundle\Metrics\MetricsCollector;
+use Nowo\HealthKitBundle\Metrics\MetricsCollectorInterface;
 use Nowo\HealthKitBundle\Metrics\MetricsProviderInterface;
 use Nowo\HealthKitBundle\Probe\HealthProbeInterface;
 use Nowo\HealthKitBundle\Tests\Fixtures\QueueProbe;
@@ -34,6 +38,20 @@ final class NowoHealthKitExtensionTest extends TestCase
         (new NowoHealthKitExtension())->load([$config], $container);
 
         return $container;
+    }
+
+    #[Test]
+    public function portsAreAliasedAndTheOldClassIdsStillResolve(): void
+    {
+        $container = $this->load(['metrics' => ['enabled' => true, 'token' => 'metrics-token-REDACTED-TEST']]);
+
+        self::assertSame(NowoHealthKitExtension::CHECKER_ID, (string) $container->getAlias(HealthCheckerInterface::class));
+        self::assertSame(NowoHealthKitExtension::CHECKER_ID, (string) $container->getAlias(HealthChecker::class));
+        self::assertSame('nowo_health_kit.metrics_collector', (string) $container->getAlias(MetricsCollectorInterface::class));
+        self::assertSame('nowo_health_kit.metrics_collector', (string) $container->getAlias(MetricsCollector::class));
+        // The controllers depend on the ports, so overriding an alias reaches them.
+        self::assertSame(HealthCheckerInterface::class, (string) $container->getDefinition(HealthController::class)->getArgument(0));
+        self::assertSame(MetricsCollectorInterface::class, (string) $container->getDefinition(MetricsController::class)->getArgument(0));
     }
 
     #[Test]
