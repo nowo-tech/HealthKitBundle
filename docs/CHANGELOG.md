@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - docs: demo screenshots regenerated on the UiKit base style
+- demo: opt into UiKit 2.51 `nowo_ui_kit.base_stylesheet`, use `nowo-ui-header__nav` for the masthead nav, screenshots regenerated with the themed shell
 
 ## [1.2.0] - 2026-11-13
 

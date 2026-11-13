@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4de7c65763eb0e95085ac330e17aa9bb",
+    "content-hash": "c8ad52b49a63c53861e973fe0637fd76",
     "packages": [
         {
             "name": "doctrine/dbal",
@@ -521,11 +521,11 @@
         },
         {
             "name": "nowo-tech/health-kit-bundle",
-            "version": "dev-main",
+            "version": "dev-chore/demo-screenshots",
             "dist": {
                 "type": "path",
                 "url": "/var/health-kit-bundle",
-                "reference": "d72b239440126b2dea0c688edb197a6b2dabc88e"
+                "reference": "acbdc8c0c38a40cf15e3035e3309fb58db876660"
             },
             "require": {
                 "php": ">=8.2 <8.6",
@@ -673,16 +673,16 @@
         },
         {
             "name": "nowo-tech/ui-kit-bundle",
-            "version": "v2.49.0",
+            "version": "v2.51.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nowo-tech/UiKitBundle.git",
-                "reference": "38f5a1e26f360bda0fe7e1f88a5182c47081b8ce"
+                "reference": "bd14774abdb7fb3bb755bf8fb2bf4aaee0258d15"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nowo-tech/UiKitBundle/zipball/38f5a1e26f360bda0fe7e1f88a5182c47081b8ce",
-                "reference": "38f5a1e26f360bda0fe7e1f88a5182c47081b8ce",
+                "url": "https://api.github.com/repos/nowo-tech/UiKitBundle/zipball/bd14774abdb7fb3bb755bf8fb2bf4aaee0258d15",
+                "reference": "bd14774abdb7fb3bb755bf8fb2bf4aaee0258d15",
                 "shasum": ""
             },
             "require": {
@@ -771,8 +771,8 @@
                 "issues": "https://github.com/nowo-tech/UiKitBundle/issues",
                 "source": "https://github.com/nowo-tech/UiKitBundle"
             },
-            "time": "2026-11-11T22:37:57+00:00",
-            "published-time": "2026-11-11T22:41:16+00:00"
+            "time": "2026-11-13T16:47:40+00:00",
+            "published-time": "2026-11-13T16:53:34+00:00"
         },
         {
             "name": "psr/cache",
