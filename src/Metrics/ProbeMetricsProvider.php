@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\HealthKitBundle\Metrics;
 
-use Nowo\HealthKitBundle\Health\HealthChecker;
+use Nowo\HealthKitBundle\Health\HealthCheckerInterface;
 
 use function is_bool;
 use function is_float;
@@ -23,10 +23,10 @@ use function round;
 final readonly class ProbeMetricsProvider implements MetricsProviderInterface
 {
     /**
-     * @param HealthChecker $checker health checker
+     * @param HealthCheckerInterface $checker health checker
      */
     public function __construct(
-        private HealthChecker $checker,
+        private HealthCheckerInterface $checker,
     ) {
     }
 

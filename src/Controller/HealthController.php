@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\HealthKitBundle\Controller;
 
-use Nowo\HealthKitBundle\Health\HealthChecker;
+use Nowo\HealthKitBundle\Health\HealthCheckerInterface;
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
 use Nowo\HealthKitBundle\Http\HiddenEndpoint;
 use Psr\Cache\CacheItemPoolInterface;
@@ -45,7 +45,7 @@ final class HealthController
     private ?array $publicReady = null;
 
     /**
-     * @param HealthChecker $checker probe runner
+     * @param HealthCheckerInterface $checker probe runner
      * @param DetailsAccessPolicy $policy details access policy
      * @param ClockInterface $clock clock (public readiness memo)
      * @param string $version application version shown by `/health/live` (empty: hidden)
@@ -56,7 +56,7 @@ final class HealthController
      * @param bool $readyPublic answer `/health/ready` to callers the details rules do not allow (false: 404 for them)
      */
     public function __construct(
-        private readonly HealthChecker $checker,
+        private readonly HealthCheckerInterface $checker,
         private readonly DetailsAccessPolicy $policy,
         private readonly ClockInterface $clock,
         private readonly string $version = '',

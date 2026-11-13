@@ -24,7 +24,7 @@ use function sprintf;
  *
  * Stateless between calls (FrankenPHP worker safe): every call builds a fresh report.
  */
-final readonly class HealthChecker
+final readonly class HealthChecker implements HealthCheckerInterface
 {
     private LoggerInterface $logger;
 

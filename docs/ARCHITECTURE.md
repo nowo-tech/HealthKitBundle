@@ -8,6 +8,8 @@
 - [Container wiring](#container-wiring)
 - [Worker safety](#worker-safety)
 - [Extension points](#extension-points)
+- [Public ports](#public-ports)
+- [Standard Symfony and DDD hosts](#standard-symfony-and-ddd-hosts)
 
 ## Overview
 
@@ -74,3 +76,33 @@ timestamp). No static state, no superglobal reads, no request data kept between 
 - Probes: `HealthProbeInterface` + `#[AsHealthProbe]` or the `nowo_health_kit.probe` tag.
 - Tokens: `DetailsTokenProviderInterface` / `MetricsTokenProviderInterface` (`*.token_provider`, resolved per request).
 - Metrics: `MetricsProviderInterface` (tag `nowo_health_kit.metrics_provider`, `priority` supported).
+
+## Public ports
+
+| Port | Default implementation | Alias target |
+| --- | --- | --- |
+| `Health\HealthCheckerInterface` (`check()`, `checkAll()`) | `Health\HealthChecker` | `nowo_health_kit.health_checker` |
+| `Metrics\MetricsCollectorInterface` (`collect()`) | `Metrics\MetricsCollector` | `nowo_health_kit.metrics_collector` |
+
+Both take and return scalars and bundle value objects (`HealthReport`, `ProbeReport`, `MetricFamily`); no Symfony, Doctrine or HTTP
+type appears in them. The controllers and `ProbeMetricsProvider` depend on the interfaces, and the old class ids stay
+aliased, so autowiring by interface or by class both work. To replace one, alias the interface to your own service:
+
+```yaml
+services:
+  App\Health\CachedHealthChecker: ~
+  Nowo\HealthKitBundle\Health\HealthCheckerInterface:
+    alias: App\Health\CachedHealthChecker
+```
+
+Keep a replacement stateless between calls (worker mode, kernel reset false). The probe SPI (`HealthProbeInterface`,
+`MetricsProviderInterface`, the token providers) is listed under [Extension points](#extension-points).
+
+## Standard Symfony and DDD hosts
+
+- **Standard Symfony host:** import the routes, set `nowo_health_kit` options and tag or attribute your probes
+  (`#[AsHealthProbe]`). Nothing else is needed; the ports are autowirable.
+- **DDD / hexagonal host:** the bundle has no entities, mapping or events. Implement `HealthProbeInterface` in your
+  infrastructure layer (a thin adapter over your domain port), keep domain code free of the bundle, and swap the
+  checker or collector through the interface aliases when you need your own aggregation. Credentials come through
+  the token provider ports, not the domain.

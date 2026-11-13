@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Ports (REQ-ARCH-001 rule 1): `HealthCheckerInterface` and `MetricsCollectorInterface`, implemented by `HealthChecker` and `MetricsCollector` and aliased in the container; the controllers and `ProbeMetricsProvider` depend on them, so a host can replace either by overriding the alias. The old class ids still resolve (additive).
+- `docs/ARCHITECTURE.md`: public ports and a "Standard Symfony and DDD hosts" section.
+
 ### Changed
 
 - Demo uses the UiKit base style (REQ-DEMO-014)

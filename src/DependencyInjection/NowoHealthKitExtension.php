@@ -10,8 +10,10 @@ use Nowo\HealthKitBundle\Controller\MetricsController;
 use Nowo\HealthKitBundle\EventListener\HiddenEndpointListener;
 use Nowo\HealthKitBundle\Health\ErrorSanitizer;
 use Nowo\HealthKitBundle\Health\HealthChecker;
+use Nowo\HealthKitBundle\Health\HealthCheckerInterface;
 use Nowo\HealthKitBundle\Http\DetailsAccessPolicy;
 use Nowo\HealthKitBundle\Metrics\MetricsCollector;
+use Nowo\HealthKitBundle\Metrics\MetricsCollectorInterface;
 use Nowo\HealthKitBundle\Metrics\MetricsProviderInterface;
 use Nowo\HealthKitBundle\Metrics\ProbeMetricsProvider;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
@@ -90,6 +92,7 @@ final class NowoHealthKitExtension extends Extension
             ])
             ->addTag('monolog.logger', ['channel' => 'health']);
         $container->setAlias(HealthChecker::class, self::CHECKER_ID);
+        $container->setAlias(HealthCheckerInterface::class, self::CHECKER_ID);
 
         $container->register('nowo_health_kit.details_access_policy', DetailsAccessPolicy::class)
             ->setArguments([
@@ -162,7 +165,7 @@ final class NowoHealthKitExtension extends Extension
 
         $container->setDefinition(HealthController::class, (new Definition(HealthController::class))
             ->setArguments([
-                new Reference(self::CHECKER_ID),
+                new Reference(HealthCheckerInterface::class),
                 new Reference('nowo_health_kit.details_access_policy'),
                 new Reference('nowo_health_kit.clock'),
                 (string) $config['version'],
@@ -198,16 +201,17 @@ final class NowoHealthKitExtension extends Extension
             ])
             ->addTag('monolog.logger', ['channel' => 'health']);
         $container->setAlias(MetricsCollector::class, 'nowo_health_kit.metrics_collector');
+        $container->setAlias(MetricsCollectorInterface::class, 'nowo_health_kit.metrics_collector');
 
         if ($metrics['enabled'] && $metrics['probe_metrics']) {
             $container->register('nowo_health_kit.metrics.probe_provider', ProbeMetricsProvider::class)
-                ->setArguments([new Reference(self::CHECKER_ID)])
+                ->setArguments([new Reference(HealthCheckerInterface::class)])
                 ->addTag(self::METRICS_PROVIDER_TAG, ['priority' => -100]);
         }
 
         $container->setDefinition(MetricsController::class, (new Definition(MetricsController::class))
             ->setArguments([
-                new Reference('nowo_health_kit.metrics_collector'),
+                new Reference(MetricsCollectorInterface::class),
                 new Reference('nowo_health_kit.prometheus_formatter'),
                 $metrics['enabled'],
                 $metrics['token'],
