@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- docs: demo screenshots regenerated on the UiKit base style
+
 ## [1.2.0] - 2026-11-13
 
 ### Added
