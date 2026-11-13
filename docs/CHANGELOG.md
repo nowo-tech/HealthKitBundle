@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-13
+
 ### Added
 
 - Ports (REQ-ARCH-001 rule 1): `HealthCheckerInterface` and `MetricsCollectorInterface`, implemented by `HealthChecker` and `MetricsCollector` and aliased in the container; the controllers and `ProbeMetricsProvider` depend on them, so a host can replace either by overriding the alias. The old class ids still resolve (additive).

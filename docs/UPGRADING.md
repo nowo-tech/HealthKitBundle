@@ -4,6 +4,7 @@
 
 - [Unreleased](#unreleased)
 - [To 1.2.0](#to-120)
+- [To 1.2.0](#to-120-1)
 - [To 1.1.0](#to-110)
 - [To 1.0.0](#to-100)
   - [Requirements](#requirements)
@@ -12,6 +13,14 @@
   - [Breaking changes](#breaking-changes)
 
 ## Unreleased
+
+## To 1.2.0
+
+From **1.1.0**:
+
+```bash
+composer update nowo-tech/health-kit-bundle
+```
 
 ## To 1.2.0
 
