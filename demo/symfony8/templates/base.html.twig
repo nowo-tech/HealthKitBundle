@@ -4,11 +4,16 @@
 
 {% block nowo_ui_document_title %}{% block title %}Health Kit Bundle demo{% endblock %}{% endblock %}
 
+{% block nowo_ui_styles %}
+    {{ parent() }}
+    <style>table.checks td:first-child code { white-space: nowrap; } table.checks td:last-child { overflow-wrap: anywhere; word-break: break-word; }</style>
+{% endblock %}
+
 {% block nowo_ui_navigation %}
     {% set _route = app.request.attributes.get('_route') %}
     <header class="nowo-ui-header" data-testid="demo-masthead">
         <a class="nowo-ui-brand" href="{{ path('demo_home') }}">Health Kit Bundle · Symfony 8.1</a>
-        <nav class="nowo-ui-menu" aria-label="Demo">
+        <nav class="nowo-ui-header__nav" aria-label="Demo">
             {% for item in [
                 {route: 'demo_home', label: 'Overview'},
                 {route: 'nowo_health_kit_live', label: '/health/live'},
