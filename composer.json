@@ -64,6 +64,7 @@
         "predis/predis": "^2.2 || ^3.0",
         "rector/rector": "^2.0",
         "symfony/cache": "^7.4 || ^8.0",
+        "symfony/form": "^7.4 || ^8.0",
         "symfony/framework-bundle": "^7.4 || ^8.0",
         "symfony/messenger": "^7.4 || ^8.0",
         "symfony/phpunit-bridge": "^7.4 || ^8.0",

@@ -30,6 +30,9 @@ final class Configuration implements ConfigurationInterface
     /** @var list<string> */
     public const GROUPS = ['live', 'ready'];
 
+    /** @var string fully qualified PHP class name (optional leading backslash) */
+    public const CLASS_NAME_PATTERN = '/^\\\\?[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*(\\\\[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*)*$/D';
+
     /**
      * Builds the configuration tree.
      *
@@ -91,6 +94,7 @@ final class Configuration implements ConfigurationInterface
         $this->addDetailsNode($children);
         $this->addProbesNode($children);
         $this->addMetricsNode($children);
+        $this->addRuntimeNode($children);
 
         return $treeBuilder;
     }
@@ -277,6 +281,73 @@ final class Configuration implements ConfigurationInterface
                     ->ifTrue(static fn (array $v): bool => self::bothTokenSources($v))
                     ->thenInvalid('"nowo_health_kit.metrics.token" and "nowo_health_kit.metrics.token_provider" are mutually exclusive: set only one.')
                 ->end()
+            ->end();
+    }
+
+    /**
+     * `runtime` node: FrankenPHP worker guards (worker recycle on lost connections, dev form collector reset).
+     *
+     * @param NodeBuilder<ArrayNodeDefinition> $children root children builder
+     */
+    private function addRuntimeNode(NodeBuilder $children): void
+    {
+        $recycle = $children
+            ->arrayNode('runtime')
+                ->info('FrankenPHP worker runtime guards. Everything is off by default.')
+                ->addDefaultsIfNotSet()
+                ->children()
+                    ->booleanNode('dev_collector_reset')
+                        ->info('Clear the profiler form collector\'s per-form data after every request (it grows in a kept-alive worker). Enable under when@dev.')
+                        ->defaultFalse()
+                    ->end()
+                    ->arrayNode('worker_recycle')
+                        ->info('End the FrankenPHP worker after a request that failed on a lost critical connection (Redis by default), once its response is sent, so FrankenPHP restarts it with fresh connections. No-op outside worker mode.')
+                        ->canBeEnabled()
+                        ->children();
+        $recycle
+            ->booleanNode('redis')
+                ->info('Trigger on Redis client errors: RedisException, RedisClusterException, Relay\\Exception, Predis\\Connection\\ConnectionException.')
+                ->defaultTrue()
+            ->end()
+            ->arrayNode('exception_classes')
+                ->info('Extra throwable classes or interfaces (FQCN, matched with instanceof on the exception and its previous chain) that trigger a recycle, e.g. Doctrine\\DBAL\\Exception\\ConnectionLost.')
+                ->scalarPrototype()
+                    ->validate()
+                        ->ifTrue(static fn (mixed $v): bool => !is_string($v) || preg_match(self::CLASS_NAME_PATTERN, $v) !== 1)
+                        ->thenInvalid('Invalid class name %s in "nowo_health_kit.runtime.worker_recycle.exception_classes": expected a fully qualified class or interface name.')
+                    ->end()
+                ->end()
+                ->defaultValue([])
+            ->end()
+            ->enumNode('log_level')
+                ->info('PSR-3 level of the log entry written when a worker is recycled.')
+                ->values(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])
+                ->defaultValue('critical')
+            ->end()
+            ->scalarNode('state_pool')
+                ->info('PSR-6 pool recording recycles (count, last time, reason) for /metrics and the probe. Use a pool that does not depend on the recycled connection (e.g. cache.system), never the Redis pool. Null: nothing recorded. A missing service is ignored.')
+                ->defaultNull()
+            ->end()
+            ->integerNode('recent_window')
+                ->info('Seconds the "runtime.worker_recycle" probe stays degraded after a recycle (0: never degraded).')
+                ->defaultValue(300)
+                ->min(0)
+            ->end();
+
+        $probe = $recycle->arrayNode('probe')
+            ->info('"runtime.worker_recycle" health probe (needs state_pool): degraded after a recent recycle.')
+            ->canBeEnabled()
+            ->children();
+        $this->addProbeSettings($probe, ['ready'], false, null);
+
+        $recycle->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !$v['redis'] && $v['exception_classes'] === [])
+                ->thenInvalid('"nowo_health_kit.runtime.worker_recycle" needs "redis: true" or at least one "exception_classes" entry when enabled.')
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && $v['probe']['enabled'] && ($v['state_pool'] === null || $v['state_pool'] === ''))
+                ->thenInvalid('"nowo_health_kit.runtime.worker_recycle.probe" needs "state_pool": the probe reads the recorded recycles.')
             ->end();
     }
 

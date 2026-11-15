@@ -17,11 +17,17 @@ use Nowo\HealthKitBundle\Metrics\MetricsCollectorInterface;
 use Nowo\HealthKitBundle\Metrics\MetricsProviderInterface;
 use Nowo\HealthKitBundle\Metrics\ProbeMetricsProvider;
 use Nowo\HealthKitBundle\Metrics\PrometheusTextFormatter;
+use Nowo\HealthKitBundle\Metrics\WorkerRecycleMetricsProvider;
 use Nowo\HealthKitBundle\Probe\FrankenPhpProbe;
 use Nowo\HealthKitBundle\Probe\HealthProbeInterface;
 use Nowo\HealthKitBundle\Probe\MessengerTransportProbe;
 use Nowo\HealthKitBundle\Probe\RedisProbe;
+use Nowo\HealthKitBundle\Probe\WorkerRecycleProbe;
+use Nowo\HealthKitBundle\Runtime\FormDataCollectorReset;
 use Nowo\HealthKitBundle\Runtime\FrankenPhpRuntime;
+use Nowo\HealthKitBundle\Runtime\WorkerRecycleListener;
+use Nowo\HealthKitBundle\Runtime\WorkerRecyclerInterface;
+use Nowo\HealthKitBundle\Runtime\WorkerRecycleState;
 use Reflector;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ChildDefinition;
@@ -42,6 +48,15 @@ final class NowoHealthKitExtension extends Extension
     public const PROBE_TAG            = 'nowo_health_kit.probe';
     public const METRICS_PROVIDER_TAG = 'nowo_health_kit.metrics_provider';
     public const CHECKER_ID           = 'nowo_health_kit.health_checker';
+    public const WORKER_RECYCLER_ID   = 'nowo_health_kit.runtime.worker_recycler';
+
+    /** @var list<string> Redis client exceptions that trigger a worker recycle (`runtime.worker_recycle.redis`) */
+    public const REDIS_EXCEPTION_CLASSES = [
+        'RedisException',
+        'RedisClusterException',
+        'Relay\\Exception',
+        'Predis\\Connection\\ConnectionException',
+    ];
 
     /**
      * Configuration alias.
@@ -61,7 +76,7 @@ final class NowoHealthKitExtension extends Extension
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
-        /** @var array{default_timeout: float, budget: float, version: string, live: array{public: bool, expose_client_ip: bool}, ready: array{public: bool, public_cache_ttl: float, cache_pool: string|null}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}} $config */
+        /** @var array{default_timeout: float, budget: float, version: string, live: array{public: bool, expose_client_ip: bool}, ready: array{public: bool, public_cache_ttl: float, cache_pool: string|null}, details: array{public: bool, allowed_ips: list<string>, token: string|null, token_provider: string|null, trust_forwarded_ip: bool}, probes: array<string, array<string, mixed>>, metrics: array{enabled: bool, token: string|null, token_provider: string|null, roles: list<string>, probe_metrics: bool}, runtime: array{dev_collector_reset: bool, worker_recycle: array<string, mixed>}} $config */
         $config = $this->processConfiguration(new Configuration(), $configs);
 
         $container->setParameter('nowo_health_kit.default_timeout', $config['default_timeout']);
@@ -111,6 +126,77 @@ final class NowoHealthKitExtension extends Extension
 
         $this->registerProbes($config['probes'], $container);
         $this->registerControllers($config, $container);
+        $this->registerRuntime($config['runtime'], $config['metrics']['enabled'], $container);
+    }
+
+    /**
+     * Registers the `runtime` guards: the worker recycle listener (+ state, metrics, probe) and the dev form collector reset.
+     *
+     * @param array{dev_collector_reset: bool, worker_recycle: array<string, mixed>} $runtime `runtime` configuration
+     * @param bool $metricsEnabled whether `/metrics` is enabled
+     * @param ContainerBuilder $container container being built
+     */
+    private function registerRuntime(array $runtime, bool $metricsEnabled, ContainerBuilder $container): void
+    {
+        if ($runtime['dev_collector_reset']) {
+            $container->register('nowo_health_kit.runtime.form_collector_reset', FormDataCollectorReset::class)
+                ->setArguments([new Reference('data_collector.form', ContainerInterface::NULL_ON_INVALID_REFERENCE)])
+                // After the profiler's late collection on kernel.terminate.
+                ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'reset', 'priority' => -4096])
+                ->addTag('kernel.reset', ['method' => 'reset']);
+        }
+
+        /** @var array{enabled: bool, redis: bool, exception_classes: list<string>, log_level: string, state_pool: string|null, recent_window: int, probe: array<string, mixed>} $recycle */
+        $recycle = $runtime['worker_recycle'];
+        if (!$recycle['enabled']) {
+            return;
+        }
+
+        $triggers = $recycle['redis'] ? self::REDIS_EXCEPTION_CLASSES : [];
+        foreach ($recycle['exception_classes'] as $class) {
+            $triggers[] = ltrim($class, '\\');
+        }
+        $pool = $recycle['state_pool'];
+
+        $container->register('nowo_health_kit.runtime.worker_recycle_state', WorkerRecycleState::class)
+            ->setArguments([
+                $pool === null || $pool === '' ? null : new Reference($pool, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                new Reference('nowo_health_kit.clock'),
+            ]);
+        $container->setAlias(WorkerRecycleState::class, 'nowo_health_kit.runtime.worker_recycle_state');
+
+        $container->register(self::WORKER_RECYCLER_ID, WorkerRecycleListener::class)
+            ->setArguments([
+                array_values(array_unique($triggers)),
+                new Reference('nowo_health_kit.runtime.worker_recycle_state'),
+                new Reference('nowo_health_kit.error_sanitizer'),
+                new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                $recycle['log_level'],
+            ])
+            ->addTag('monolog.logger', ['channel' => 'health'])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4096])
+            // Before listeners that may turn the error into a response.
+            ->addTag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 2048])
+            // After the response is sent and after the other terminate listeners.
+            ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -8192])
+            ->addTag('kernel.reset', ['method' => 'reset']);
+        $container->setAlias(WorkerRecyclerInterface::class, self::WORKER_RECYCLER_ID);
+
+        if ($metricsEnabled) {
+            $container->register('nowo_health_kit.metrics.worker_recycle_provider', WorkerRecycleMetricsProvider::class)
+                ->setArguments([new Reference('nowo_health_kit.runtime.worker_recycle_state')])
+                ->addTag(self::METRICS_PROVIDER_TAG, ['priority' => -90]);
+        }
+
+        if ($recycle['probe']['enabled']) {
+            $container->register('nowo_health_kit.probe.worker_recycle', WorkerRecycleProbe::class)
+                ->setArguments([
+                    new Reference('nowo_health_kit.runtime.worker_recycle_state'),
+                    new Reference('nowo_health_kit.clock'),
+                    $recycle['recent_window'],
+                ])
+                ->addTag(self::PROBE_TAG, $this->tagAttributes('runtime.worker_recycle', $recycle['probe']));
+        }
     }
 
     /**
