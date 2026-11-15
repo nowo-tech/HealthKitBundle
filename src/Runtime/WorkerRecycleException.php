@@ -17,6 +17,9 @@ final class WorkerRecycleException extends RuntimeException
     /** @var string constant message: the reason is logged once by the listener, never carried by the exception (Symfony re-logs it) */
     public const MESSAGE = 'The FrankenPHP worker is recycled to get fresh connections (not an application error).';
 
+    /**
+     * Builds the exception with its constant message.
+     */
     public function __construct()
     {
         parent::__construct(self::MESSAGE);
