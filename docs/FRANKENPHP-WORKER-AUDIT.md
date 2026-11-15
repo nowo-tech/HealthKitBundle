@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/health-kit-bundle` (`symfony-bundle`) |
-| Audited revision | `1.1.0` (re-checked 2026-11-12) |
+| Audited revision | `1.1.0` (re-checked 2026-11-12); `runtime` section added for 1.3.0 (2026-11-15) |
 | Audit date | 2026-10-31, refreshed 2026-11-12 |
 | Method | Manual review of every file under `src/`; PHPStan `ruleset-classic` + `ruleset-worker-strict` + `ruleset-hardening`; Igor (`composer igor`, 0 KO / 0 WARN); demo run in worker mode |
 | **Verdict** | ✅ **Viable** — services are immutable except one deliberate per-worker memo (anonymous readiness status) that holds no request or user data |
@@ -56,6 +56,9 @@ A bundle safe under **B** is safe under **A**, classic mode and PHP-FPM.
 | `nowo_health_kit.frankenphp_runtime` | none; reads the current main request per call | ✅ | ✅ |
 | `nowo_health_kit.probe.*` (Doctrine, Redis, Messenger, FrankenPHP) | none (`readonly`) | ✅ | ✅ |
 | `nowo_health_kit.error_sanitizer` | none | ✅ | ✅ |
+| `nowo_health_kit.runtime.worker_recycler` (`WorkerRecycleListener`, only with `runtime.worker_recycle.enabled`) | `pendingReason` (one class name or redacted reason) set during a request; cleared at the main `kernel.request`, at `kernel.terminate` (before anything else) and on `kernel.reset` (`ResetInterface`, tested) | ✅ | ✅ |
+| `nowo_health_kit.runtime.worker_recycle_state` (`WorkerRecycleState`), `nowo_health_kit.metrics.worker_recycle_provider`, `nowo_health_kit.probe.worker_recycle` | none (`readonly`); the recycle record lives in the host's PSR-6 pool | ✅ | ✅ |
+| `nowo_health_kit.runtime.form_collector_reset` (`FormDataCollectorReset`, only with `runtime.dev_collector_reset`) | none (`readonly`); clears the profiler form collector's per-form data on `kernel.terminate` and `kernel.reset` | ✅ | ✅ |
 
 ## Kept-alive kernel test
 
@@ -67,6 +70,12 @@ token state) and memory growth after warm-up stays under 4 MiB.
 
 The bundle is **safe with kernel reset false**. Rule 7: the bundle never flushes or clears the host's default entity
 manager; the Doctrine probe only pings the DBAL connections it is given.
+
+`tests/Integration/Kernel/WorkerRecycleKernelTest.php` drives one kept-alive kernel 1,200 times through a failing
+host route (outside worker mode) followed by a normal route in worker mode: the recycle mark never leaks into the
+next request and memory stays flat. The same file checks that a lost connection in worker mode gets its full 500
+response before `WorkerRecycleException` leaves `terminate()`. `FormDataCollectorResetTest` builds 300 forms against
+one collector and checks that the per-form data is cleared and memory stays flat.
 
 ## Findings
 
@@ -80,6 +89,10 @@ with N workers up to N runs happen per TTL window.
 - Host probes and metrics providers must stay stateless and bound their I/O with the probe timeout.
 - Prefer atomic counters (Redis `INCRBY`, SQL) in metrics providers: in-memory counters are per worker and lost on restart.
 - Use `probes.frankenphp.require_worker: true` when the deployment must run in worker mode.
+- Enable `runtime.worker_recycle` so a lost Redis (or other critical) connection restarts the worker instead of
+  failing every later request, and `runtime.dev_collector_reset` under `when@dev` when the profiler runs in worker mode.
+- The worker recycle ends the worker by throwing from `kernel.terminate` after the response is sent (Symfony's
+  `FrankenPhpWorkerRunner` rethrows it); the bundle itself never calls `exit` or `die`. It is an uncaught exception (exit 255, a CRITICAL log line), not a clean exit.
 
 ## Re-audit triggers
 

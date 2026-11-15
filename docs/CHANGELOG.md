@@ -5,8 +5,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ErrorSanitizer::redact()` and `redactPersonalData()` bound the regex input; the key/value pattern is quadratic, so 100 KB of text took about 17 s (audit QH-D5). Longer text is redacted on a 2,512-byte window and only the redacted result is cut to 2,000 bytes (back to the last whitespace, or past the trailing token when there is none, on UTF-8 boundaries), so a credential next to the cut keeps the terminator its pattern needs (URL `@`, closing JSON quote) and is not shown unredacted or in part (audit QH-D6), except for the case under Known issues (QH-D7). Every caller (`sanitize()`, `redactData()`, probe messages and the health warning log, the recycle reason) is covered.
+
+- `runtime.worker_recycle` hardening (audit QH): `WorkerRecycleException` has a constant message (the reason is logged once, at `log_level`, never carried by the exception that Symfony re-logs); the reason is redacted for emails and IP addresses as well as credentials (`ErrorSanitizer::redactPersonalData()`); the state-pool item expires after 30 days; broad `exception_classes` (`Throwable`, `Exception`, `RuntimeException`, `LogicException`, `HttpExceptionInterface`, DBAL `DriverException`...) are refused unless `allow_broad_exception_classes: true`; worker mode needs `worker=` with a value other than 0; a missing `state_pool` service fails the container build with an `InvalidConfigurationException`; broad-class guard also covers `HttpExceptionInterface` / DBAL `ConstraintViolationException` subclasses; IP addresses followed by `:port` or preceded by `:` are redacted. Docs: listeners below -8192 do not run on a recycled request, and the recycle is an uncaught exception (exit 255, CRITICAL log) to filter in Sentry/BeaconBundle.
+
+- `runtime` section: opt-in FrankenPHP worker guards, everything off by default (no change for existing hosts). Requested by Symfony Beacon (re-audit 2026-11-11, item 6) to replace its `src/Shared/Runtime`.
+  - `runtime.worker_recycle`: a request that fails on a lost critical connection (`redis: true` covers `RedisException`, `RedisClusterException`, `Relay\Exception`, `Predis\Connection\ConnectionException`; plus `exception_classes`, matched with `instanceof` along the previous chain) marks the worker. On `kernel.terminate` (priority -8192, after the response is sent) `WorkerRecycleListener` throws `WorkerRecycleException`, which Symfony's `FrankenPhpWorkerRunner` rethrows to end the worker script, so FrankenPHP restarts it with fresh connections. It only throws when `APP_RUNTIME_MODE` has `worker=` with a value other than 0, so it is a no-op under PHP-FPM, classic mode, CLI and tests. Port `Runtime\WorkerRecyclerInterface::requestRecycle()` for host code that catches the failure itself. Logged on the `health` channel (`log_level`, default `critical`; exception class or redacted reason only).
+  - `runtime.worker_recycle.state_pool`: optional PSR-6 pool recording recycles; `/metrics` gains `health_kit_worker_recycle_enabled`, `health_kit_worker_recycle_persistent`, `health_kit_worker_recycles_total` and `health_kit_worker_recycle_last_timestamp_seconds`; optional `runtime.worker_recycle` probe (`probe.enabled`, non-critical, `ready` group) degraded for `recent_window` seconds (default 300) after a recycle.
+  - `runtime.dev_collector_reset`: clears the profiler form collector's per-form data (`dataByForm`, `dataByView`, `formsByView`) on `kernel.terminate` (priority -4096) and `kernel.reset`, so it no longer grows in a kept-alive dev worker.
+
+### Known issues
+
+- Audit QH-D7 (Low): in probe messages and string probe data longer than 2,000 bytes with no whitespace in the kept part, a credential longer than about 512 bytes that contains `;`, `,`, `&`, `|` or a quote, starts before the cut and has its terminator past the 2,512-byte window, can show its user name and the start of its password to details callers and in the health warning log. The code fix is planned for 1.3.x: redact the kept text again with a synthetic terminator and cut back before the first byte that changes.
+- Audit QH-I6 (Info): text of 2,000 bytes or less is not truncated, and redaction can make it slightly longer (`a://b@` becomes `a://***@`).
+
+### Tests
+
+- Kept-alive kernel test for the worker recycle (1,200 requests, mark never leaks, memory flat) and a 300-form collector reset test; `docs/FRANKENPHP-WORKER-AUDIT.md` updated (REQ-RUNTIME-002).
+
 ### Changed
 
+- Probe messages and string probe data longer than 2,000 bytes are now truncated, for every probe, and end with a visible `…[truncated]` marker (audit QH-I5). Status, durations, numeric data and `/metrics` are unchanged.
 - docs: demo screenshots regenerated on the UiKit base style
 - demo: opt into UiKit 2.51 `nowo_ui_kit.base_stylesheet`, use `nowo-ui-header__nav` for the masthead nav, screenshots regenerated with the themed shell
 

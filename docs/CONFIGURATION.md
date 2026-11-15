@@ -17,6 +17,9 @@ and invalid values fail the container compilation with the offending path in the
   - [frankenphp](#frankenphp)
 - [metrics — Prometheus endpoint](#metrics--prometheus-endpoint)
   - [Runtime token providers](#runtime-token-providers)
+- [runtime — FrankenPHP worker guards](#runtime--frankenphp-worker-guards)
+  - [worker_recycle](#worker_recycle)
+  - [dev_collector_reset](#dev_collector_reset)
 - [Timeout hierarchy](#timeout-hierarchy)
 - [Environment-specific configuration](#environment-specific-configuration)
 - [Profiles](#profiles)
@@ -73,6 +76,20 @@ nowo_health_kit:
         token_provider: null      # service id of a MetricsTokenProviderInterface (exclusive with token)
         roles: []                 # session roles also allowed (empty = none)
         probe_metrics: true       # export probes as gauges
+    runtime:                      # FrankenPHP worker guards, all off by default
+        dev_collector_reset: false  # clear the profiler form collector's per-form data after each request
+        worker_recycle:
+            enabled: false        # end the worker after a request that lost a critical connection
+            redis: true           # trigger on Redis client errors (phpredis, Relay, Predis)
+            exception_classes: [] # extra throwable classes / interfaces (FQCN) that trigger it
+            log_level: critical   # PSR-3 level of the recycle log entry
+            state_pool: null      # PSR-6 pool recording recycles (metrics, probe); never the Redis pool
+            recent_window: 300    # seconds the probe stays degraded after a recycle (0 = never)
+            probe:                # "runtime.worker_recycle" probe (needs state_pool)
+                enabled: false
+                groups: [ready]
+                critical: false
+                timeout: null
 ```
 
 ## Global options
@@ -275,6 +292,95 @@ nowo_health_kit:
 The provider is called only for requests that carry an `Authorization: Bearer` header (anonymous traffic never
 triggers it), once per such request; keep the lookup cheap (one settings read). If it throws, the bundle treats the
 token as missing and logs a warning with the provider and exception class names only (never the message).
+
+## runtime — FrankenPHP worker guards
+
+Opt-in guards for applications served by FrankenPHP worker mode with the kernel kept alive
+(`FRANKENPHP_RESET_KERNEL=false`). Everything is off by default: a host that does not set `runtime` is unchanged.
+
+### worker_recycle
+
+When the shared Redis (or another backend) is restarted or recreated, a kept-alive worker keeps its dead connections
+(session handler, cache pools, rate-limit clients) and every request it serves fails, while `/health/live` may stay
+green. With `worker_recycle.enabled`, a request that fails on a lost connection ends its worker **after its response
+has been sent**, and FrankenPHP starts a fresh worker with new connections.
+
+How it works:
+
+1. `kernel.exception` (priority 2048) walks the exception and its `getPrevious()` chain. An instance (`instanceof`) of
+   a trigger class marks the current worker. Host code that catches the failure itself can mark it through the
+   `Nowo\HealthKitBundle\Runtime\WorkerRecyclerInterface` port (`requestRecycle(string $reason)`).
+2. `kernel.terminate` (priority -8192: the response is already sent; listeners registered **below** -8192 do not run
+   on a recycled request) records the recycle in `state_pool`, logs it once on the `health` channel and throws
+   `Nowo\HealthKitBundle\Runtime\WorkerRecycleException`, whose message is a constant (the reason is never in the
+   exception). Symfony's `FrankenPhpWorkerRunner` (symfony/runtime, used when `APP_RUNTIME_MODE` has `worker=` with a
+   value other than 0) rethrows it once `frankenphp_handle_request()` returns: the worker script ends and FrankenPHP
+   restarts it.
+3. Outside FrankenPHP worker mode (PHP-FPM, classic FrankenPHP, CLI, tests) nothing is thrown, because those
+   processes do not outlive the request. It is a no-op there.
+
+The recycle is an **uncaught exception, not a clean exit** (unlike a worker reaching `FRANKENPHP_LOOP_MAX`):
+
+- FrankenPHP logs `unexpected termination, restarting` (exit code 255) for every recycle.
+- Symfony logs a `CRITICAL` "Uncaught PHP Exception ... WorkerRecycleException" line on the `request` channel.
+- In dev the error renderer cannot run after the response (`ob_start()` fatal); the worker restarts anyway.
+- Error trackers see it as an error. Filter it. Sentry (`sentry/sentry-symfony`):
+  `sentry: { options: { ignore_exceptions: ['Nowo\HealthKitBundle\Runtime\WorkerRecycleException'] } }`. BeaconBundle:
+  set `nowo_beacon: { ignore_exceptions: ['Nowo\\HealthKitBundle\\Runtime\\WorkerRecycleException'] }` (matched with `instanceof`; covers the HTTP, Messenger and console listeners and the Monolog handler; `nowo_beacon.monolog_handler.ignore_exceptions` adds entries for the handler only). For log alerting, drop `request` channel records whose
+  `context.exception` is a `WorkerRecycleException`; the guard's own `health` log entry is the one to alert on.
+
+The mark lives for one request only: it is cleared at the main `kernel.request`, at `kernel.terminate` and on
+`kernel.reset`.
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `false` | Turns the guard on. |
+| `redis` | `true` | Triggers on `RedisException`, `RedisClusterException` (phpredis), `Relay\Exception` and `Predis\Connection\ConnectionException`. Classes that are not installed are skipped. |
+| `exception_classes` | `[]` | More triggers, as fully qualified class or interface names, for example `Doctrine\DBAL\Exception\ConnectionLost` or your own client's "connection lost" exception. With `redis: false`, at least one is required. |
+| `allow_broad_exception_classes` | `false` | Container build refuses broad bases in `exception_classes` (`Throwable`, `Exception`, `Error`, `RuntimeException`, `LogicException`, `InvalidArgumentException`, `HttpExceptionInterface`, `HttpException`, `Doctrine\DBAL\Exception`, `Doctrine\DBAL\Exception\DriverException`): any 404 or duplicate key would recycle the worker. Also refused: anything that is a `HttpExceptionInterface` or DBAL `ConstraintViolationException`, plus `ErrorException`, `UnexpectedValueException`, `DomainException`, `TypeError`, `ValueError`. The guard cannot catch every subclass of the broad bases (legitimate triggers such as `RedisException` extend `Exception`), so an ordinary subclass you name on purpose is accepted. Set `true` only to accept that risk. |
+| `log_level` | `critical` | PSR-3 level of the entry `Critical connection lost: recycling the FrankenPHP worker…`. Its context holds `reason` (the exception class name, or the reason given to `requestRecycle()` with credentials, emails and IP addresses redacted, max 200 characters) and `recorded`. Exception messages are never logged by the guard. |
+| `state_pool` | `null` | PSR-6 pool that records recycles (count, last time, last reason) for `/metrics` and the probe. Use a pool that does **not** depend on the connection being recycled, for example `cache.system` (filesystem), never a Redis pool. The record expires after 30 days (renewed by each recycle). A missing service fails the container build (`InvalidConfigurationException`). Pool failures never block a recycle. |
+| `recent_window` | `300` | Seconds the `runtime.worker_recycle` probe reports `degraded` after the last recycle (`0`: never). |
+| `probe` | disabled | `runtime.worker_recycle` probe: `degraded` after a recent recycle, `ok` otherwise, with `recycles_total`, `last_recycle_age_seconds` and `last_reason` as data. Shared probe settings: groups `[ready]`, `critical: false`. It requires `state_pool`. |
+
+When `metrics.enabled` is true, `/metrics` also exports `health_kit_worker_recycle_enabled`,
+`health_kit_worker_recycle_persistent` (1 with a `state_pool`), `health_kit_worker_recycles_total` (counter, from the
+pool) and `health_kit_worker_recycle_last_timestamp_seconds` (once a recycle has happened). The pool count is a
+read-increment-write: two workers recycling at the same instant may count once.
+
+```yaml
+# config/packages/nowo_health_kit.yaml
+nowo_health_kit:
+    runtime:
+        worker_recycle:
+            enabled: true
+            state_pool: cache.system
+            probe: { enabled: true }
+```
+
+Notes:
+
+- The failing request itself still gets its normal error response. Only the next requests benefit.
+- Messenger consumers (`messenger:consume`) are not HTTP workers. Use `--failure-limit`, `--memory-limit` and
+  `--time-limit` with your process manager's restart policy there.
+- A custom runtime that does not rethrow exceptions escaping `kernel.terminate` will not end the worker. The guard
+  only throws when `APP_RUNTIME_MODE` has `worker=` with a value other than 0, which Symfony's FrankenPHP runner sets.
+
+### dev_collector_reset
+
+`Symfony\Component\Form\Extension\DataCollector\FormDataCollector::reset()` clears its report but not the per-form
+data it gathers while forms are built (`dataByForm`, `dataByView`, `formsByView`, with every resolved option). A
+kept-alive worker keeps the collector between requests, so in dev that data grows until the worker runs out of
+memory (Symfony Beacon measured +340 KB per request on its login page). With `dev_collector_reset: true` the bundle
+clears those three properties on `kernel.terminate` (priority -4096, after the profiler's late collection) and on
+`kernel.reset`. Without the profiler or symfony/form it does nothing. Enable it in dev only:
+
+```yaml
+when@dev:
+    nowo_health_kit:
+        runtime:
+            dev_collector_reset: true
+```
 
 ## Timeout hierarchy
 
