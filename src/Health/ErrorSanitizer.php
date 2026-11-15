@@ -34,7 +34,14 @@ final class ErrorSanitizer
 {
     private const MAX_LENGTH = 300;
 
-    /** @var int longest text returned by {@see redact()} and {@see redactPersonalData()}, in bytes (audits QH-D5, QH-D6) */
+    /**
+     * Length in bytes above which {@see redact()} and {@see redactPersonalData()} truncate (audits QH-D5, QH-D6).
+     *
+     * Truncated output is at most this long. Shorter text is not cut, and redaction can make it slightly longer, for
+     * example when a one-character URL user name becomes `***` (audit QH-I6).
+     *
+     * @var int
+     */
     public const MAX_INPUT_LENGTH = 2000;
 
     /** @var string appended when the text was truncated (audit QH-I5) */
@@ -167,13 +174,17 @@ final class ErrorSanitizer
      * + {@see LOOKAHEAD_LENGTH} bytes, so the regexes stay bounded but still see the terminator a credential near the
      * limit needs (the `@` of a URL, the closing quote of a JSON value). Only the redacted result is then cut to
      * {@see MAX_INPUT_LENGTH} bytes, including the {@see TRUNCATED_MARKER}: back to the last whitespace, or, when the
-     * kept part has none, back past the trailing token. A credential longer than the lookahead that straddles the
-     * window is therefore dropped, never shown in part. Cuts fall on UTF-8 character boundaries.
+     * kept part has none, back past the trailing token (which ends at one of `"',;&|`). A credential longer than the
+     * lookahead that straddles the window is therefore dropped, with one known limit (audit QH-D7, fix planned for
+     * 1.3.x): when the kept part has no whitespace and such a credential contains one of `"',;&|`, the token step stops
+     * inside it and its prefix (user name, start of the password) can be shown. Cuts fall on UTF-8 character
+     * boundaries.
      *
      * @param string $text text of any length
      * @param Closure(string):string $redactor patterns to apply to the bounded text
      *
-     * @return string the redacted text, at most {@see MAX_INPUT_LENGTH} bytes
+     * @return string the redacted text: at most {@see MAX_INPUT_LENGTH} bytes when truncated; text that was not
+     *                truncated can grow slightly through redaction (audit QH-I6)
      */
     private function bounded(string $text, Closure $redactor): string
     {
