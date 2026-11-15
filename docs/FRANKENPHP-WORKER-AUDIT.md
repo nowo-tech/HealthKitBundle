@@ -92,7 +92,7 @@ with N workers up to N runs happen per TTL window.
 - Enable `runtime.worker_recycle` so a lost Redis (or other critical) connection restarts the worker instead of
   failing every later request, and `runtime.dev_collector_reset` under `when@dev` when the profiler runs in worker mode.
 - The worker recycle ends the worker by throwing from `kernel.terminate` after the response is sent (Symfony's
-  `FrankenPhpWorkerRunner` rethrows it); the bundle itself never calls `exit` or `die`.
+  `FrankenPhpWorkerRunner` rethrows it); the bundle itself never calls `exit` or `die`. It is an uncaught exception (exit 255, a CRITICAL log line), not a clean exit.
 
 ## Re-audit triggers
 

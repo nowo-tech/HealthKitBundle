@@ -6,6 +6,7 @@ namespace Nowo\HealthKitBundle;
 
 use Nowo\HealthKitBundle\DependencyInjection\Compiler\DoctrineProbePass;
 use Nowo\HealthKitBundle\DependencyInjection\Compiler\HealthProbePass;
+use Nowo\HealthKitBundle\DependencyInjection\Compiler\WorkerRecycleStatePoolPass;
 use Nowo\HealthKitBundle\DependencyInjection\NowoHealthKitExtension;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -36,6 +37,7 @@ final class NowoHealthKitBundle extends Bundle
         parent::build($container);
         $container->addCompilerPass(new DoctrineProbePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
         $container->addCompilerPass(new HealthProbePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 0);
+        $container->addCompilerPass(new WorkerRecycleStatePoolPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 0);
     }
 
     /**

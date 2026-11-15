@@ -26,6 +26,9 @@ final readonly class WorkerRecycleState
     /** @var string cache key of the record */
     public const CACHE_KEY = 'nowo_health_kit.worker_recycle';
 
+    /** @var int seconds the record lives in the pool, renewed by every recycle */
+    public const TTL = 2592000;
+
     /**
      * @param CacheItemPoolInterface|null $pool shared pool (null: nothing recorded)
      * @param ClockInterface $clock clock for the recycle timestamp
@@ -62,6 +65,7 @@ final readonly class WorkerRecycleState
         try {
             $current = $this->snapshot();
             $item    = $this->pool->getItem(self::CACHE_KEY);
+            $item->expiresAfter(self::TTL);
             $item->set([
                 'recycles_total'  => $current['recycles_total'] + 1,
                 'last_recycle_at' => $this->clock->now()->getTimestamp(),

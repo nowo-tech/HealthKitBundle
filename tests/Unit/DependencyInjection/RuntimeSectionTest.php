@@ -59,13 +59,14 @@ final class RuntimeSectionTest extends TestCase
         self::assertSame([
             'dev_collector_reset' => false,
             'worker_recycle'      => [
-                'enabled'           => false,
-                'redis'             => true,
-                'exception_classes' => [],
-                'log_level'         => 'critical',
-                'state_pool'        => null,
-                'recent_window'     => 300,
-                'probe'             => ['enabled' => false, 'groups' => ['ready'], 'critical' => false, 'timeout' => null],
+                'enabled'                       => false,
+                'redis'                         => true,
+                'exception_classes'             => [],
+                'allow_broad_exception_classes' => false,
+                'log_level'                     => 'critical',
+                'state_pool'                    => null,
+                'recent_window'                 => 300,
+                'probe'                         => ['enabled' => false, 'groups' => ['ready'], 'critical' => false, 'timeout' => null],
             ],
         ], $this->process([]));
 
@@ -147,6 +148,10 @@ final class RuntimeSectionTest extends TestCase
     {
         yield 'no trigger' => [['worker_recycle' => ['enabled' => true, 'redis' => false]], 'needs "redis: true" or at least one'];
         yield 'probe without pool' => [['worker_recycle' => ['enabled' => true, 'probe' => ['enabled' => true]]], 'needs "state_pool"'];
+        yield 'broad Exception' => [['worker_recycle' => ['exception_classes' => ['\\Exception']]], 'broad class(es) \\Exception'];
+        yield 'broad RuntimeException' => [['worker_recycle' => ['exception_classes' => ['App\\Ok', 'runtimeexception']]], 'allow_broad_exception_classes'];
+        yield 'broad http interface' => [['worker_recycle' => ['exception_classes' => ['Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface']]], 'broad class'];
+        yield 'broad DBAL driver' => [['worker_recycle' => ['exception_classes' => ['Doctrine\\DBAL\\Exception\\DriverException']]], 'broad class'];
         yield 'bad class name' => [['worker_recycle' => ['exception_classes' => ['not a class']]], 'expected a fully qualified class or interface name'];
         yield 'non-string class' => [['worker_recycle' => ['exception_classes' => [12]]], 'expected a fully qualified class or interface name'];
         yield 'bad level' => [['worker_recycle' => ['log_level' => 'loud']], 'log_level'];
@@ -170,5 +175,14 @@ final class RuntimeSectionTest extends TestCase
     public function disabledGuardSkipsTheTriggerRules(): void
     {
         self::assertFalse($this->process(['worker_recycle' => ['enabled' => false, 'redis' => false, 'probe' => ['enabled' => true]]])['worker_recycle']['enabled']);
+    }
+
+    #[Test]
+    public function broadClassesAreAcceptedWithTheExplicitOptOut(): void
+    {
+        $recycle = $this->process(['worker_recycle' => ['enabled' => true, 'exception_classes' => ['RuntimeException'], 'allow_broad_exception_classes' => true]])['worker_recycle'];
+
+        self::assertSame(['RuntimeException'], $recycle['exception_classes']);
+        self::assertSame(['Exception'], $this->process(['worker_recycle' => ['enabled' => false, 'exception_classes' => ['Exception']]])['worker_recycle']['exception_classes']);
     }
 }

@@ -8,6 +8,7 @@ use Nowo\HealthKitBundle\Runtime\WorkerRecycleState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use RuntimeException;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -34,6 +35,21 @@ final class WorkerRecycleStateTest extends TestCase
             'last_recycle_at' => $clock->now()->getTimestamp(),
             'last_reason'     => 'Predis\\Connection\\ConnectionException',
         ], $state->snapshot());
+    }
+
+    #[Test]
+    public function theRecordExpires(): void
+    {
+        $item = $this->createMock(CacheItemInterface::class);
+        $item->method('isHit')->willReturn(false);
+        $item->expects(self::once())->method('expiresAfter')->with(WorkerRecycleState::TTL)->willReturnSelf();
+        $item->method('set')->willReturnSelf();
+        $pool = $this->createStub(CacheItemPoolInterface::class);
+        $pool->method('getItem')->willReturn($item);
+        $pool->method('save')->willReturn(true);
+
+        self::assertTrue((new WorkerRecycleState($pool, new MockClock()))->record('RedisException'));
+        self::assertSame(2592000, WorkerRecycleState::TTL);
     }
 
     #[Test]

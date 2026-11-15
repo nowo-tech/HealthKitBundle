@@ -68,4 +68,13 @@ final class ErrorSanitizerTest extends TestCase
             (new ErrorSanitizer())->redactData(['client_secret' => 'x', 'dsn' => 'amqp://u:p@mq', 'n' => 1, 'ok' => true, 'none' => null]),
         );
     }
+
+    #[Test]
+    public function redactsEmailsAndIpAddresses(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        self::assertSame('mail ***@*** ip ***, *** and *** at 10:20:30 (999.1.1.1)', $sanitizer->redactPersonalData('mail jane.doe+x@mail.example.com ip 10.1.2.3, 2001:db8::1 and ::1 at 10:20:30 (999.1.1.1)'));
+        self::assertSame('plain text', $sanitizer->redactPersonalData('plain text'));
+    }
 }

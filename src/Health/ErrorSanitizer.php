@@ -6,14 +6,18 @@ namespace Nowo\HealthKitBundle\Health;
 
 use Throwable;
 
+use function filter_var;
 use function is_string;
 use function mb_substr;
 use function preg_match;
 use function preg_replace;
+use function preg_replace_callback;
 use function sprintf;
 use function strrchr;
 use function substr;
 use function trim;
+
+use const FILTER_VALIDATE_IP;
 
 /**
  * Turns a probe exception into a short message that is safe to show to detail callers and to log.
@@ -67,6 +71,27 @@ final class ErrorSanitizer
         return (string) preg_replace(
             '#(["\']?)\b(' . self::SECRET_KEY . ')\1(\s*(?:=>|=|:)\s*)(["\']?)[^\s"\',;&}\])]+\4#i',
             '$1$2$1$3$4***$4',
+            $text,
+        );
+    }
+
+    /**
+     * Removes personal data from free text: email addresses and IPv4/IPv6 addresses.
+     *
+     * Complements {@see redact()} (credentials only) for text that is stored or logged for a long time, such as the
+     * worker recycle reason.
+     *
+     * @param string $text free text
+     *
+     * @return string the text with `***@***` for emails and `***` for IP addresses
+     */
+    public function redactPersonalData(string $text): string
+    {
+        $text = (string) preg_replace('#[\w.%+-]+@[\w-]+(?:\.[\w-]+)+#u', '***@***', $text);
+
+        return (string) preg_replace_callback(
+            '#(?<![\w.:])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-f:]*:[0-9a-f:]*(?:\.\d{1,3}){0,3})(?![\w:])#i',
+            static fn (array $m): string => filter_var($m[0], FILTER_VALIDATE_IP) === false ? $m[0] : '***',
             $text,
         );
     }

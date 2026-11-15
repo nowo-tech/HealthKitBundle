@@ -8,11 +8,20 @@ use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\NodeBuilder;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 use function array_diff;
+use function array_filter;
+use function array_map;
+use function array_values;
+use function implode;
+use function in_array;
 use function is_array;
 use function is_string;
+use function ltrim;
 use function preg_match;
+use function sprintf;
+use function strtolower;
 
 use const FILTER_VALIDATE_IP;
 
@@ -31,6 +40,20 @@ final class Configuration implements ConfigurationInterface
     public const GROUPS = ['live', 'ready'];
 
     /** @var string fully qualified PHP class name (optional leading backslash) */
+    /** @var list<string> bases that match ordinary application errors (any 404 would recycle); refused unless `allow_broad_exception_classes` */
+    public const BROAD_EXCEPTION_CLASSES = [
+        'Throwable',
+        'Exception',
+        'Error',
+        'RuntimeException',
+        'LogicException',
+        'InvalidArgumentException',
+        'Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface',
+        'Symfony\\Component\\HttpKernel\\Exception\\HttpException',
+        'Doctrine\\DBAL\\Exception',
+        'Doctrine\\DBAL\\Exception\\DriverException',
+    ];
+
     public const CLASS_NAME_PATTERN = '/^\\\\?[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*(\\\\[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*)*$/D';
 
     /**
@@ -85,7 +108,7 @@ final class Configuration implements ConfigurationInterface
                         ->min(0.0)
                     ->end()
                     ->scalarNode('cache_pool')
-                        ->info('PSR-6 pool sharing the public readiness answer across PHP processes (FPM / classic mode). Null: per-worker memo only. A missing service is ignored.')
+                        ->info('PSR-6 pool sharing the public readiness answer across PHP processes (FPM / classic mode). Null: per-worker memo only. A missing service is ignored (a warning is raised at container build).')
                         ->defaultValue('cache.app')
                     ->end()
                 ->end()
@@ -319,6 +342,10 @@ final class Configuration implements ConfigurationInterface
                 ->end()
                 ->defaultValue([])
             ->end()
+            ->booleanNode('allow_broad_exception_classes')
+                ->info('Accept broad bases in "exception_classes" (Throwable, Exception, RuntimeException, LogicException, HttpExceptionInterface, DBAL DriverException...). Off: they are refused, because any 404 or duplicate key would then recycle the worker.')
+                ->defaultFalse()
+            ->end()
             ->enumNode('log_level')
                 ->info('PSR-3 level of the log entry written when a worker is recycled.')
                 ->values(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])
@@ -346,9 +373,29 @@ final class Configuration implements ConfigurationInterface
                 ->thenInvalid('"nowo_health_kit.runtime.worker_recycle" needs "redis: true" or at least one "exception_classes" entry when enabled.')
             ->end()
             ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !$v['allow_broad_exception_classes'] && self::broadClasses($v['exception_classes']) !== [])
+                ->then(static function (array $v): never {
+                    throw new InvalidConfigurationException(sprintf('"nowo_health_kit.runtime.worker_recycle.exception_classes" contains the broad class(es) %s: any ordinary error (a 404, a duplicate key) would recycle the worker. Use a specific connection-loss class, or set "allow_broad_exception_classes: true" to accept the risk.', implode(', ', self::broadClasses($v['exception_classes']))));
+                })
+            ->end()
+            ->validate()
                 ->ifTrue(static fn (array $v): bool => $v['enabled'] && $v['probe']['enabled'] && ($v['state_pool'] === null || $v['state_pool'] === ''))
                 ->thenInvalid('"nowo_health_kit.runtime.worker_recycle.probe" needs "state_pool": the probe reads the recorded recycles.')
             ->end();
+    }
+
+    /**
+     * Configured classes that are known-broad bases (case-insensitive, leading backslash ignored).
+     *
+     * @param list<string> $classes configured `exception_classes`
+     *
+     * @return list<string> the broad ones, as configured
+     */
+    private static function broadClasses(array $classes): array
+    {
+        $broad = array_map('strtolower', self::BROAD_EXCEPTION_CLASSES);
+
+        return array_values(array_filter($classes, static fn (string $class): bool => in_array(strtolower(ltrim($class, '\\')), $broad, true)));
     }
 
     /**

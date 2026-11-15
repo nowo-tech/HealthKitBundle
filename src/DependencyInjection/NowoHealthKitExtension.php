@@ -146,7 +146,7 @@ final class NowoHealthKitExtension extends Extension
                 ->addTag('kernel.reset', ['method' => 'reset']);
         }
 
-        /** @var array{enabled: bool, redis: bool, exception_classes: list<string>, log_level: string, state_pool: string|null, recent_window: int, probe: array<string, mixed>} $recycle */
+        /** @var array{enabled: bool, redis: bool, exception_classes: list<string>, allow_broad_exception_classes: bool, log_level: string, state_pool: string|null, recent_window: int, probe: array<string, mixed>} $recycle */
         $recycle = $runtime['worker_recycle'];
         if (!$recycle['enabled']) {
             return;
@@ -177,7 +177,7 @@ final class NowoHealthKitExtension extends Extension
             ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 4096])
             // Before listeners that may turn the error into a response.
             ->addTag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 2048])
-            // After the response is sent and after the other terminate listeners.
+            // After the response is sent; listeners below -8192 do not run on a recycled request.
             ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onKernelTerminate', 'priority' => -8192])
             ->addTag('kernel.reset', ['method' => 'reset']);
         $container->setAlias(WorkerRecyclerInterface::class, self::WORKER_RECYCLER_ID);

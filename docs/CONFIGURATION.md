@@ -310,14 +310,24 @@ How it works:
 1. `kernel.exception` (priority 2048) walks the exception and its `getPrevious()` chain. An instance (`instanceof`) of
    a trigger class marks the current worker. Host code that catches the failure itself can mark it through the
    `Nowo\HealthKitBundle\Runtime\WorkerRecyclerInterface` port (`requestRecycle(string $reason)`).
-2. `kernel.terminate` (priority -8192: the response is already sent and the other terminate listeners have run)
-   records the recycle in `state_pool`, logs it on the `health` channel and throws
-   `Nowo\HealthKitBundle\Runtime\WorkerRecycleException`. Symfony's `FrankenPhpWorkerRunner` (symfony/runtime, used
-   when `APP_RUNTIME_MODE` contains `worker=`) rethrows it once `frankenphp_handle_request()` returns: the worker
-   script ends and FrankenPHP restarts it. This is the same path as a worker script that reaches the end of its loop
-   (`FRANKENPHP_LOOP_MAX` / max requests), triggered early.
+2. `kernel.terminate` (priority -8192: the response is already sent; listeners registered **below** -8192 do not run
+   on a recycled request) records the recycle in `state_pool`, logs it once on the `health` channel and throws
+   `Nowo\HealthKitBundle\Runtime\WorkerRecycleException`, whose message is a constant (the reason is never in the
+   exception). Symfony's `FrankenPhpWorkerRunner` (symfony/runtime, used when `APP_RUNTIME_MODE` has `worker=` with a
+   value other than 0) rethrows it once `frankenphp_handle_request()` returns: the worker script ends and FrankenPHP
+   restarts it.
 3. Outside FrankenPHP worker mode (PHP-FPM, classic FrankenPHP, CLI, tests) nothing is thrown, because those
    processes do not outlive the request. It is a no-op there.
+
+The recycle is an **uncaught exception, not a clean exit** (unlike a worker reaching `FRANKENPHP_LOOP_MAX`):
+
+- FrankenPHP logs `unexpected termination, restarting` (exit code 255) for every recycle.
+- Symfony logs a `CRITICAL` "Uncaught PHP Exception ... WorkerRecycleException" line on the `request` channel.
+- In dev the error renderer cannot run after the response (`ob_start()` fatal); the worker restarts anyway.
+- Error trackers see it as an error. Filter it. Sentry (`sentry/sentry-symfony`):
+  `sentry: { options: { ignore_exceptions: ['Nowo\HealthKitBundle\Runtime\WorkerRecycleException'] } }`. BeaconBundle:
+  add the same class to its exception ignore list. For log alerting, drop `request` channel records whose
+  `context.exception` is a `WorkerRecycleException`; the guard's own `health` log entry is the one to alert on.
 
 The mark lives for one request only: it is cleared at the main `kernel.request`, at `kernel.terminate` and on
 `kernel.reset`.
@@ -327,8 +337,9 @@ The mark lives for one request only: it is cleared at the main `kernel.request`,
 | `enabled` | `false` | Turns the guard on. |
 | `redis` | `true` | Triggers on `RedisException`, `RedisClusterException` (phpredis), `Relay\Exception` and `Predis\Connection\ConnectionException`. Classes that are not installed are skipped. |
 | `exception_classes` | `[]` | More triggers, as fully qualified class or interface names, for example `Doctrine\DBAL\Exception\ConnectionLost` or your own client's "connection lost" exception. With `redis: false`, at least one is required. |
-| `log_level` | `critical` | PSR-3 level of the entry `Critical connection lost: recycling the FrankenPHP worker…`. Its context holds `reason` (the exception class name, or the redacted reason given to `requestRecycle()`, max 200 characters) and `recorded`. Exception messages are never logged by the guard. |
-| `state_pool` | `null` | PSR-6 pool that records recycles (count, last time, last reason) for `/metrics` and the probe. Use a pool that does **not** depend on the connection being recycled, for example `cache.system` (filesystem), never a Redis pool. A missing service is ignored. Pool failures never block a recycle. |
+| `allow_broad_exception_classes` | `false` | Container build refuses broad bases in `exception_classes` (`Throwable`, `Exception`, `Error`, `RuntimeException`, `LogicException`, `InvalidArgumentException`, `HttpExceptionInterface`, `HttpException`, `Doctrine\DBAL\Exception`, `Doctrine\DBAL\Exception\DriverException`): any 404 or duplicate key would recycle the worker. Set `true` only to accept that risk. |
+| `log_level` | `critical` | PSR-3 level of the entry `Critical connection lost: recycling the FrankenPHP worker…`. Its context holds `reason` (the exception class name, or the reason given to `requestRecycle()` with credentials, emails and IP addresses redacted, max 200 characters) and `recorded`. Exception messages are never logged by the guard. |
+| `state_pool` | `null` | PSR-6 pool that records recycles (count, last time, last reason) for `/metrics` and the probe. Use a pool that does **not** depend on the connection being recycled, for example `cache.system` (filesystem), never a Redis pool. The record expires after 30 days (renewed by each recycle). A missing service is ignored but raises a warning at container build. Pool failures never block a recycle. |
 | `recent_window` | `300` | Seconds the `runtime.worker_recycle` probe reports `degraded` after the last recycle (`0`: never). |
 | `probe` | disabled | `runtime.worker_recycle` probe: `degraded` after a recent recycle, `ok` otherwise, with `recycles_total`, `last_recycle_age_seconds` and `last_reason` as data. Shared probe settings: groups `[ready]`, `critical: false`. It requires `state_pool`. |
 
@@ -353,7 +364,7 @@ Notes:
 - Messenger consumers (`messenger:consume`) are not HTTP workers. Use `--failure-limit`, `--memory-limit` and
   `--time-limit` with your process manager's restart policy there.
 - A custom runtime that does not rethrow exceptions escaping `kernel.terminate` will not end the worker. The guard
-  only throws when `APP_RUNTIME_MODE` contains `worker=`, which Symfony's FrankenPHP runner sets.
+  only throws when `APP_RUNTIME_MODE` has `worker=` with a value other than 0, which Symfony's FrankenPHP runner sets.
 
 ### dev_collector_reset
 

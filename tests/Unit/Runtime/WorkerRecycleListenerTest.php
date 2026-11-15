@@ -91,7 +91,8 @@ final class WorkerRecycleListenerTest extends TestCase
             $listener->onKernelTerminate($this->terminate('web=1&worker=1'));
             self::fail('the worker is recycled');
         } catch (WorkerRecycleException $e) {
-            self::assertStringContainsString(LostConnectionException::class, $e->getMessage());
+            self::assertSame(WorkerRecycleException::MESSAGE, $e->getMessage());
+            self::assertStringNotContainsString(LostConnectionException::class, $e->getMessage());
             self::assertStringNotContainsString('went away', $e->getMessage());
         }
 
@@ -128,7 +129,7 @@ final class WorkerRecycleListenerTest extends TestCase
     public function outsideWorkerModeNothingIsThrownAndTheMarkIsCleared(): void
     {
         $listener = $this->listener();
-        foreach ([null, 'web=1', ''] as $mode) {
+        foreach ([null, 'web=1', '', 'web=1&worker=0', 'web=1&worker=', 'web=1&worker=00', 'web=1&worker[]=1'] as $mode) {
             $listener->onKernelException($this->exception(new LostConnectionException('x')));
             $listener->onKernelTerminate($this->terminate($mode));
             self::assertFalse($listener->isRecyclePending());
@@ -137,7 +138,7 @@ final class WorkerRecycleListenerTest extends TestCase
         $listener->requestRecycle('array mode');
         $listener->onKernelTerminate(new TerminateEvent($this->createStub(HttpKernelInterface::class), $request, new Response()));
 
-        self::assertCount(4, $this->logs());
+        self::assertCount(8, $this->logs());
         self::assertSame(LogLevel::DEBUG, $this->logs()[0][0]);
         self::assertSame(0, (new WorkerRecycleState($this->pool, new MockClock()))->snapshot()['recycles_total']);
     }
@@ -184,5 +185,22 @@ final class WorkerRecycleListenerTest extends TestCase
         } catch (WorkerRecycleException) {
         }
         self::assertSame('unspecified', $this->logs()[1][2]['reason']);
+    }
+
+    #[Test]
+    public function hostReasonsLoseEmailsAndIpAddresses(): void
+    {
+        $listener = $this->listener();
+        $listener->requestRecycle('user jane.doe@example.com from 10.1.2.3 and 2001:db8::1 at 10:20:30 lost redis');
+
+        try {
+            $listener->onKernelTerminate($this->terminate('web=1&worker=1'));
+            self::fail('recycled');
+        } catch (WorkerRecycleException $e) {
+            self::assertSame(WorkerRecycleException::MESSAGE, $e->getMessage());
+        }
+        self::assertCount(1, $this->logs(), 'the reason is logged once');
+        self::assertSame('user ***@*** from *** and *** at 10:20:30 lost redis', $this->logs()[0][2]['reason']);
+        self::assertSame('user ***@*** from *** and *** at 10:20:30 lost redis', (new WorkerRecycleState($this->pool, new MockClock()))->snapshot()['last_reason']);
     }
 }

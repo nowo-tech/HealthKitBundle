@@ -14,9 +14,11 @@ use Symfony\Contracts\Service\ResetInterface;
 use Throwable;
 
 use function is_scalar;
+use function is_string;
+use function ltrim;
 use function mb_substr;
+use function parse_str;
 use function preg_replace;
-use function str_contains;
 use function trim;
 
 /**
@@ -28,9 +30,10 @@ use function trim;
  * 1. `kernel.exception` (priority 2048): walks the throwable and its previous chain; an instance of a trigger class
  *    (Redis client exceptions by default, plus `exception_classes`) marks the worker. Host code can mark it too
  *    through {@see WorkerRecyclerInterface::requestRecycle()}.
- * 2. `kernel.terminate` (priority -8192, after the response has been sent and after the other terminate listeners):
- *    when marked and the request is served by Symfony's FrankenPHP worker runner (`APP_RUNTIME_MODE` contains
- *    `worker=`), records the recycle, logs it and throws {@see WorkerRecycleException}. The runner rethrows it once
+ * 2. `kernel.terminate` (priority -8192, after the response has been sent; listeners registered below -8192 do not
+ *    run on a recycled request): when marked and the request is served by Symfony's FrankenPHP worker runner
+ *    (`APP_RUNTIME_MODE` has `worker=` with a value other than 0), records the recycle, logs the redacted reason once
+ *    and throws {@see WorkerRecycleException}, whose message is a constant. The runner rethrows it once
  *    `frankenphp_handle_request()` returns, the worker script ends and FrankenPHP starts a fresh worker with new
  *    connections. The response is never cut: nothing happens before `kernel.terminate`.
  *
@@ -69,7 +72,7 @@ final class WorkerRecycleListener implements WorkerRecyclerInterface, ResetInter
     public function requestRecycle(string $reason): void
     {
         $clean               = trim((string) preg_replace('/[\x00-\x1F\x7F]+/', ' ', $reason));
-        $clean               = mb_substr($this->sanitizer->redact($clean), 0, self::MAX_REASON_LENGTH);
+        $clean               = mb_substr($this->sanitizer->redactPersonalData($this->sanitizer->redact($clean)), 0, self::MAX_REASON_LENGTH);
         $this->pendingReason = $clean === '' ? 'unspecified' : $clean;
     }
 
@@ -129,7 +132,7 @@ final class WorkerRecycleListener implements WorkerRecyclerInterface, ResetInter
         }
 
         $mode = $event->getRequest()->server->get('APP_RUNTIME_MODE', '');
-        if (!is_scalar($mode) || !str_contains((string) $mode, 'worker=')) {
+        if (!$this->isWorkerMode($mode)) {
             $this->logger?->debug('Critical connection failure outside FrankenPHP worker mode: no worker to recycle.', ['reason' => $reason]);
 
             return;
@@ -141,7 +144,26 @@ final class WorkerRecycleListener implements WorkerRecyclerInterface, ResetInter
             'recorded' => $recorded,
         ]);
 
-        throw new WorkerRecycleException('Critical connection lost (' . $reason . '); the FrankenPHP worker restarts with fresh connections.');
+        throw new WorkerRecycleException();
+    }
+
+    /**
+     * Whether `APP_RUNTIME_MODE` says the request is served by a worker (`worker=` with a value other than 0).
+     *
+     * @param mixed $mode value of `APP_RUNTIME_MODE`
+     *
+     * @return bool true in worker mode
+     */
+    private function isWorkerMode(mixed $mode): bool
+    {
+        if (!is_scalar($mode)) {
+            return false;
+        }
+
+        parse_str((string) $mode, $parts);
+        $worker = $parts['worker'] ?? '';
+
+        return is_string($worker) && ltrim($worker, '0') !== '';
     }
 
     /**
