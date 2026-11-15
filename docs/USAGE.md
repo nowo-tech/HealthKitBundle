@@ -18,6 +18,7 @@
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
   - [Keeping your domain free of the bundle](#keeping-your-domain-free-of-the-bundle)
   - [Known limitations](#known-limitations)
+- [Recycling the FrankenPHP worker from your own code](#recycling-the-frankenphp-worker-from-your-own-code)
 - [Demo smoke](#demo-smoke)
 
 ## Endpoints and JSON contract
@@ -266,6 +267,37 @@ final readonly class PaymentGatewayProbe implements HealthProbeInterface
 
 - No event is dispatched when a probe changes status; poll `HealthChecker::check()` if you need to react.
 - `HealthChecker` has no interface; wrap it behind your own port if application code depends on it.
+
+## Recycling the FrankenPHP worker from your own code
+
+With `runtime.worker_recycle.enabled` (see [CONFIGURATION](CONFIGURATION.md#worker_recycle)), failures that reach
+`kernel.exception` with a trigger class in their chain recycle the worker on their own. When your code catches a lost
+connection and answers anyway (a quota or rate-limit client that fails open, for example), ask for the recycle
+through the port:
+
+```php
+use Nowo\HealthKitBundle\Runtime\WorkerRecyclerInterface;
+
+final readonly class IngestQuota
+{
+    public function __construct(private \Redis $redis, private ?WorkerRecyclerInterface $recycler = null) {}
+
+    public function allow(string $projectId): bool
+    {
+        try {
+            return $this->redis->incr('quota:' . $projectId) <= 1000;
+        } catch (\RedisException) {
+            $this->recycler?->requestRecycle('ingest quota: Redis connection lost');
+
+            return true; // fail open for this request; the next worker reconnects
+        }
+    }
+}
+```
+
+The worker ends after the current response has been sent. The reason is logged and recorded, so keep it short and
+free of secrets (it is redacted and capped at 200 characters anyway). Outside FrankenPHP worker mode the call has no
+effect. Type-hint the interface as nullable when the guard may be disabled: the alias exists only when it is enabled.
 
 ## Demo smoke
 

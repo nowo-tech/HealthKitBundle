@@ -13,6 +13,30 @@
 
 ## Unreleased
 
+From **1.2.0**: additive, no action needed. The new `runtime` section is off by default.
+
+To restart FrankenPHP workers that lost their Redis connection, and to stop the dev form collector from growing in a
+kept-alive worker:
+
+```yaml
+nowo_health_kit:
+    runtime:
+        worker_recycle:
+            enabled: true
+            state_pool: cache.system   # optional: metrics + probe; never a Redis pool
+            probe: { enabled: true }   # optional: "runtime.worker_recycle", non-critical
+            # exception_classes: ['Doctrine\DBAL\Exception\ConnectionLost']
+
+when@dev:
+    nowo_health_kit:
+        runtime:
+            dev_collector_reset: true
+```
+
+If your application has its own listener that recycles the worker on Redis errors, or one that clears
+`FormDataCollector`, remove it when you enable these options so the work is not done twice. See
+[CONFIGURATION](CONFIGURATION.md#runtime--frankenphp-worker-guards).
+
 ## To 1.2.0
 
 From **1.1.0**: additive, no action needed.

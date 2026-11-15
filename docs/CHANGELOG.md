@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `runtime` section: opt-in FrankenPHP worker guards, everything off by default (no change for existing hosts). Requested by Symfony Beacon (re-audit 2026-11-11, item 6) to replace its `src/Shared/Runtime`.
+  - `runtime.worker_recycle`: a request that fails on a lost critical connection (`redis: true` covers `RedisException`, `RedisClusterException`, `Relay\Exception`, `Predis\Connection\ConnectionException`; plus `exception_classes`, matched with `instanceof` along the previous chain) marks the worker. On `kernel.terminate` (priority -8192, after the response is sent) `WorkerRecycleListener` throws `WorkerRecycleException`, which Symfony's `FrankenPhpWorkerRunner` rethrows to end the worker script, so FrankenPHP restarts it with fresh connections. It only throws when `APP_RUNTIME_MODE` contains `worker=`, so it is a no-op under PHP-FPM, classic mode, CLI and tests. Port `Runtime\WorkerRecyclerInterface::requestRecycle()` for host code that catches the failure itself. Logged on the `health` channel (`log_level`, default `critical`; exception class or redacted reason only).
+  - `runtime.worker_recycle.state_pool`: optional PSR-6 pool recording recycles; `/metrics` gains `health_kit_worker_recycle_enabled`, `health_kit_worker_recycle_persistent`, `health_kit_worker_recycles_total` and `health_kit_worker_recycle_last_timestamp_seconds`; optional `runtime.worker_recycle` probe (`probe.enabled`, non-critical, `ready` group) degraded for `recent_window` seconds (default 300) after a recycle.
+  - `runtime.dev_collector_reset`: clears the profiler form collector's per-form data (`dataByForm`, `dataByView`, `formsByView`) on `kernel.terminate` (priority -4096) and `kernel.reset`, so it no longer grows in a kept-alive dev worker.
+
+### Tests
+
+- Kept-alive kernel test for the worker recycle (1,200 requests, mark never leaks, memory flat) and a 300-form collector reset test; `docs/FRANKENPHP-WORKER-AUDIT.md` updated (REQ-RUNTIME-002).
+
 ### Changed
 
 - docs: demo screenshots regenerated on the UiKit base style

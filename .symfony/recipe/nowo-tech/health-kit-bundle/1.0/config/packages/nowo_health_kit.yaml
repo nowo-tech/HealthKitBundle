@@ -25,8 +25,15 @@ nowo_health_kit:
     metrics:
         enabled: false
         token: '%env(default::METRICS_TOKEN)%'
+    # FrankenPHP worker mode: restart a worker that lost its Redis connection (after its response is sent).
+    # runtime:
+    #     worker_recycle:
+    #         enabled: true
+    #         state_pool: cache.system
 
 when@dev:
     nowo_health_kit:
         details:
             public: true
+        # runtime:
+        #     dev_collector_reset: true

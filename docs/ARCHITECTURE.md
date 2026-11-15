@@ -68,7 +68,8 @@ HTTP ──► MetricsController ──► BearerToken / roles
 ## Worker safety
 
 All services are immutable (`readonly`) except `HealthController`, which keeps the anonymous readiness memo (status +
-timestamp). No static state, no superglobal reads, no request data kept between requests. See
+timestamp), and the opt-in `WorkerRecycleListener`, whose recycle mark lives for one request (cleared at the main
+`kernel.request`, at `kernel.terminate` and on `kernel.reset`). No static state, no superglobal reads, no request data kept between requests. See
 [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md).
 
 ## Extension points
@@ -83,6 +84,7 @@ timestamp). No static state, no superglobal reads, no request data kept between 
 | --- | --- | --- |
 | `Health\HealthCheckerInterface` (`check()`, `checkAll()`) | `Health\HealthChecker` | `nowo_health_kit.health_checker` |
 | `Metrics\MetricsCollectorInterface` (`collect()`) | `Metrics\MetricsCollector` | `nowo_health_kit.metrics_collector` |
+| `Runtime\WorkerRecyclerInterface` (`requestRecycle()`, `isRecyclePending()`; only with `runtime.worker_recycle.enabled`) | `Runtime\WorkerRecycleListener` | `nowo_health_kit.runtime.worker_recycler` |
 
 Both take and return scalars and bundle value objects (`HealthReport`, `ProbeReport`, `MetricFamily`); no Symfony, Doctrine or HTTP
 type appears in them. The controllers and `ProbeMetricsProvider` depend on the interfaces, and the old class ids stay
