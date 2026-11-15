@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `ErrorSanitizer::redact()` and `redactPersonalData()` bound their input to 2,000 bytes (cut back to the last whitespace) before running the regexes; the key/value pattern is quadratic, so 100 KB of text took about 17 s (audit QH-D5). Every caller (`sanitize()`, `redactData()`, probe messages, the recycle reason) is covered.
+
 - `runtime.worker_recycle` hardening (audit QH): `WorkerRecycleException` has a constant message (the reason is logged once, at `log_level`, never carried by the exception that Symfony re-logs); the reason is redacted for emails and IP addresses as well as credentials (`ErrorSanitizer::redactPersonalData()`); the state-pool item expires after 30 days; broad `exception_classes` (`Throwable`, `Exception`, `RuntimeException`, `LogicException`, `HttpExceptionInterface`, DBAL `DriverException`...) are refused unless `allow_broad_exception_classes: true`; worker mode needs `worker=` with a value other than 0; a missing `state_pool` service fails the container build with an `InvalidConfigurationException`; broad-class guard also covers `HttpExceptionInterface` / DBAL `ConstraintViolationException` subclasses; IP addresses followed by `:port` or preceded by `:` are redacted. Docs: listeners below -8192 do not run on a recycled request, and the recycle is an uncaught exception (exit 255, CRITICAL log) to filter in Sentry/BeaconBundle.
 
 - `runtime` section: opt-in FrankenPHP worker guards, everything off by default (no change for existing hosts). Requested by Symfony Beacon (re-audit 2026-11-11, item 6) to replace its `src/Shared/Runtime`.

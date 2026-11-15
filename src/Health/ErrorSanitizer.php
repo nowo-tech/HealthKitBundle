@@ -8,12 +8,15 @@ use Throwable;
 
 use function filter_var;
 use function is_string;
+use function mb_strcut;
 use function mb_substr;
 use function preg_match;
 use function preg_replace;
 use function preg_replace_callback;
 use function sprintf;
+use function strlen;
 use function strrchr;
+use function strrpos;
 use function substr;
 use function trim;
 
@@ -28,6 +31,9 @@ use const FILTER_VALIDATE_IP;
 final class ErrorSanitizer
 {
     private const MAX_LENGTH = 300;
+
+    /** @var int longest text the redaction regexes run on (audit QH-D5: the key/value pattern is quadratic) */
+    public const MAX_INPUT_LENGTH = 2000;
 
     /** Regex fragment matching secret-looking keys. */
     private const SECRET_KEY = '[a-z0-9_.-]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|auth[a-z_]*|credentials?)[a-z0-9_.-]*';
@@ -64,6 +70,7 @@ final class ErrorSanitizer
      */
     public function redact(string $text): string
     {
+        $text = $this->bound($text);
         $text = (string) preg_replace('#\b(Bearer|Basic)\s+[A-Za-z0-9\-._~+/=]+#i', '$1 ***', $text);
         $text = (string) preg_replace('#([a-z][a-z0-9+.\-]*://)\S*@#i', '$1***@', $text);
         $text = (string) preg_replace('#(?<![\w.%+/:@-])[\w.%+-]+:(?!//)[^\s@]+@(?=[\w\[])#', '***@', $text);
@@ -87,6 +94,7 @@ final class ErrorSanitizer
      */
     public function redactPersonalData(string $text): string
     {
+        $text = $this->bound($text);
         $text = (string) preg_replace('#[\w.%+-]+@[\w-]+(?:\.[\w-]+)+#u', '***@***', $text);
 
         return (string) preg_replace_callback(
@@ -114,5 +122,28 @@ final class ErrorSanitizer
         }
 
         return $data;
+    }
+
+    /**
+     * Bounds the text the redaction regexes run on.
+     *
+     * Longer text is cut to 2,000 bytes (on a character boundary) and then back to the last whitespace, so a credential
+     * cut in the middle (`redis://user:pa`) cannot leave a recognisable fragment. Callers cut their own output to a
+     * shorter length afterwards, so the dropped tail is never shown.
+     *
+     * @param string $text text of any length
+     *
+     * @return string the text, at most 2,000 bytes
+     */
+    private function bound(string $text): string
+    {
+        if (strlen($text) <= self::MAX_INPUT_LENGTH) {
+            return $text;
+        }
+
+        $cut   = mb_strcut($text, 0, self::MAX_INPUT_LENGTH);
+        $space = strrpos($cut, ' ');
+
+        return $space === false ? $cut : substr($cut, 0, $space);
     }
 }

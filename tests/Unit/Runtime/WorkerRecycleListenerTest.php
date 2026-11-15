@@ -203,4 +203,21 @@ final class WorkerRecycleListenerTest extends TestCase
         self::assertSame('user ***@*** from *** and *** at 10:20:30 lost redis', $this->logs()[0][2]['reason']);
         self::assertSame('user ***@*** from *** and *** at 10:20:30 lost redis', (new WorkerRecycleState($this->pool, new MockClock()))->snapshot()['last_reason']);
     }
+
+    #[Test]
+    public function aHugeHostReasonIsBoundedBeforeRedaction(): void
+    {
+        $listener = $this->listener();
+        $listener->requestRecycle(str_repeat('password=x ', 10000));
+
+        $start = microtime(true);
+        try {
+            $listener->onKernelTerminate($this->terminate('web=1&worker=1'));
+            self::fail('recycled');
+        } catch (WorkerRecycleException) {
+        }
+        self::assertLessThan(1.0, microtime(true) - $start);
+        self::assertLessThanOrEqual(200, mb_strlen((string) $this->logs()[0][2]['reason']));
+        self::assertStringNotContainsString('=x', (string) $this->logs()[0][2]['reason']);
+    }
 }

@@ -12,6 +12,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
+use function strlen;
+
 #[CoversClass(ErrorSanitizer::class)]
 final class ErrorSanitizerTest extends TestCase
 {
@@ -85,5 +87,36 @@ final class ErrorSanitizerTest extends TestCase
 
         self::assertSame('redis ***:6379 tcp:*** redis://***:6379 [***]:6379 at ***.', $sanitizer->redactPersonalData('redis 10.0.0.9:6379 tcp:10.0.0.7 redis://10.0.0.9:6379 [2001:db8::1]:6379 at 10.0.0.1.'));
         self::assertSame('at 10:20:30 and 1.2.3.4.5 and v10.0.0.9', $sanitizer->redactPersonalData('at 10:20:30 and 1.2.3.4.5 and v10.0.0.9'));
+    }
+
+    #[Test]
+    public function hugeInputsAreBoundedAndFinishFast(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+        $huge      = str_repeat('password=', 12000) . str_repeat('a:b ', 5000);
+
+        $start = microtime(true);
+        $sanitizer->redact($huge);
+        $sanitizer->redactPersonalData($huge);
+        $sanitizer->sanitize(new RuntimeException($huge));
+        $sanitizer->redactData(['k' => $huge]);
+
+        self::assertLessThan(1.0, microtime(true) - $start);
+        self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redact($huge)));
+        self::assertSame('short text', $sanitizer->redact('short text'));
+        self::assertSame(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redact(str_repeat('x', 5000))));
+    }
+
+    #[Test]
+    public function aSecretAtTheBoundaryNeverComesOutUnredacted(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+        for ($pad = 1960; $pad <= 2000; ++$pad) {
+            $text   = str_repeat('x', $pad - 1) . ' password=hunter2secret redis://user:pass-REDACTED-TEST@host ' . str_repeat('y', 100);
+            $result = $sanitizer->redact($text);
+            self::assertStringNotContainsString('hunter2', $result, (string) $pad);
+            self::assertStringNotContainsString('pass-REDACTED', $result, (string) $pad);
+            self::assertStringNotContainsString('user:', $result, (string) $pad);
+        }
     }
 }
