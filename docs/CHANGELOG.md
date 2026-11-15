@@ -3,7 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## Table of contents
+
+- [[Unreleased]](#unreleased)
+- [[1.3.0] - 2026-11-15](#130---2026-11-15)
+- [[1.2.0] - 2026-11-13](#120---2026-11-13)
+- [[1.1.0] - 2026-11-06](#110---2026-11-06)
+- [[1.0.0] - 2026-10-31](#100---2026-10-31)
+
 ## [Unreleased]
+
+## [1.3.0] - 2026-11-15
 
 ### Added
 
