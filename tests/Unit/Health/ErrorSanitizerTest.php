@@ -77,4 +77,13 @@ final class ErrorSanitizerTest extends TestCase
         self::assertSame('mail ***@*** ip ***, *** and *** at 10:20:30 (999.1.1.1)', $sanitizer->redactPersonalData('mail jane.doe+x@mail.example.com ip 10.1.2.3, 2001:db8::1 and ::1 at 10:20:30 (999.1.1.1)'));
         self::assertSame('plain text', $sanitizer->redactPersonalData('plain text'));
     }
+
+    #[Test]
+    public function redactsIpAddressesWithPortsAndPrefixes(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        self::assertSame('redis ***:6379 tcp:*** redis://***:6379 [***]:6379 at ***.', $sanitizer->redactPersonalData('redis 10.0.0.9:6379 tcp:10.0.0.7 redis://10.0.0.9:6379 [2001:db8::1]:6379 at 10.0.0.1.'));
+        self::assertSame('at 10:20:30 and 1.2.3.4.5 and v10.0.0.9', $sanitizer->redactPersonalData('at 10:20:30 and 1.2.3.4.5 and v10.0.0.9'));
+    }
 }

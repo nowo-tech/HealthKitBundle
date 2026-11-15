@@ -90,7 +90,7 @@ final class ErrorSanitizer
         $text = (string) preg_replace('#[\w.%+-]+@[\w-]+(?:\.[\w-]+)+#u', '***@***', $text);
 
         return (string) preg_replace_callback(
-            '#(?<![\w.:])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-f:]*:[0-9a-f:]*(?:\.\d{1,3}){0,3})(?![\w:])#i',
+            '#(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?!\w|\.\d)|(?<![\w.:])[0-9a-f:]*:[0-9a-f:]*(?:\.\d{1,3}){0,3}(?![\w:])#i',
             static fn (array $m): string => filter_var($m[0], FILTER_VALIDATE_IP) === false ? $m[0] : '***',
             $text,
         );

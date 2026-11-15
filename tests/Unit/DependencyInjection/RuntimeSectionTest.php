@@ -152,6 +152,9 @@ final class RuntimeSectionTest extends TestCase
         yield 'broad RuntimeException' => [['worker_recycle' => ['exception_classes' => ['App\\Ok', 'runtimeexception']]], 'allow_broad_exception_classes'];
         yield 'broad http interface' => [['worker_recycle' => ['exception_classes' => ['Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface']]], 'broad class'];
         yield 'broad DBAL driver' => [['worker_recycle' => ['exception_classes' => ['Doctrine\\DBAL\\Exception\\DriverException']]], 'broad class'];
+        yield 'http subclass' => [['worker_recycle' => ['exception_classes' => ['Symfony\\Component\\HttpKernel\\Exception\\NotFoundHttpException']]], 'broad class'];
+        yield 'dbal constraint subclass' => [['worker_recycle' => ['exception_classes' => ['Doctrine\\DBAL\\Exception\\UniqueConstraintViolationException']]], 'broad class'];
+        yield 'type error' => [['worker_recycle' => ['exception_classes' => ['TypeError']]], 'broad class'];
         yield 'bad class name' => [['worker_recycle' => ['exception_classes' => ['not a class']]], 'expected a fully qualified class or interface name'];
         yield 'non-string class' => [['worker_recycle' => ['exception_classes' => [12]]], 'expected a fully qualified class or interface name'];
         yield 'bad level' => [['worker_recycle' => ['log_level' => 'loud']], 'log_level'];
@@ -184,5 +187,13 @@ final class RuntimeSectionTest extends TestCase
 
         self::assertSame(['RuntimeException'], $recycle['exception_classes']);
         self::assertSame(['Exception'], $this->process(['worker_recycle' => ['enabled' => false, 'exception_classes' => ['Exception']]])['worker_recycle']['exception_classes']);
+    }
+
+    #[Test]
+    public function specificAndMissingClassesAreAccepted(): void
+    {
+        $classes = ['Doctrine\\DBAL\\Exception\\ConnectionLost', 'Not\\Installed\\Thing', 'App\\Ok'];
+
+        self::assertSame($classes, $this->process(['worker_recycle' => ['enabled' => true, 'exception_classes' => $classes]])['worker_recycle']['exception_classes']);
     }
 }

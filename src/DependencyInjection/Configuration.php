@@ -16,6 +16,7 @@ use function array_map;
 use function array_values;
 use function implode;
 use function in_array;
+use function is_a;
 use function is_array;
 use function is_string;
 use function ltrim;
@@ -39,7 +40,6 @@ final class Configuration implements ConfigurationInterface
     /** @var list<string> */
     public const GROUPS = ['live', 'ready'];
 
-    /** @var string fully qualified PHP class name (optional leading backslash) */
     /** @var list<string> bases that match ordinary application errors (any 404 would recycle); refused unless `allow_broad_exception_classes` */
     public const BROAD_EXCEPTION_CLASSES = [
         'Throwable',
@@ -52,8 +52,21 @@ final class Configuration implements ConfigurationInterface
         'Symfony\\Component\\HttpKernel\\Exception\\HttpException',
         'Doctrine\\DBAL\\Exception',
         'Doctrine\\DBAL\\Exception\\DriverException',
+        'Doctrine\\DBAL\\Exception\\ConstraintViolationException',
+        'ErrorException',
+        'UnexpectedValueException',
+        'DomainException',
+        'TypeError',
+        'ValueError',
     ];
 
+    /** @var list<string> interfaces and classes whose subclasses are never a connection loss (checked with is_a when the class exists) */
+    public const NEVER_CONNECTION_LOSS = [
+        'Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface',
+        'Doctrine\\DBAL\\Exception\\ConstraintViolationException',
+    ];
+
+    /** @var string fully qualified PHP class name (optional leading backslash) */
     public const CLASS_NAME_PATTERN = '/^\\\\?[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*(\\\\[a-zA-Z_\\x80-\\xff][a-zA-Z0-9_\\x80-\\xff]*)*$/D';
 
     /**
@@ -108,7 +121,7 @@ final class Configuration implements ConfigurationInterface
                         ->min(0.0)
                     ->end()
                     ->scalarNode('cache_pool')
-                        ->info('PSR-6 pool sharing the public readiness answer across PHP processes (FPM / classic mode). Null: per-worker memo only. A missing service is ignored (a warning is raised at container build).')
+                        ->info('PSR-6 pool sharing the public readiness answer across PHP processes (FPM / classic mode). Null: per-worker memo only. A missing service is ignored.')
                         ->defaultValue('cache.app')
                     ->end()
                 ->end()
@@ -352,7 +365,7 @@ final class Configuration implements ConfigurationInterface
                 ->defaultValue('critical')
             ->end()
             ->scalarNode('state_pool')
-                ->info('PSR-6 pool recording recycles (count, last time, reason) for /metrics and the probe. Use a pool that does not depend on the recycled connection (e.g. cache.system), never the Redis pool. Null: nothing recorded. A missing service is ignored.')
+                ->info('PSR-6 pool recording recycles (count, last time, reason) for /metrics and the probe. Use a pool that does not depend on the recycled connection (e.g. cache.system), never the Redis pool. Null: nothing recorded. A missing service fails the container build.')
                 ->defaultNull()
             ->end()
             ->integerNode('recent_window')
@@ -395,7 +408,19 @@ final class Configuration implements ConfigurationInterface
     {
         $broad = array_map('strtolower', self::BROAD_EXCEPTION_CLASSES);
 
-        return array_values(array_filter($classes, static fn (string $class): bool => in_array(strtolower(ltrim($class, '\\')), $broad, true)));
+        return array_values(array_filter($classes, static function (string $class) use ($broad): bool {
+            $class = ltrim($class, '\\');
+            if (in_array(strtolower($class), $broad, true)) {
+                return true;
+            }
+            foreach (self::NEVER_CONNECTION_LOSS as $parent) {
+                if (is_a($class, $parent, true)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
     }
 
     /**
