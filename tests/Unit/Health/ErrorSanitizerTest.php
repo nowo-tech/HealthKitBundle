@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
+use function mb_check_encoding;
 use function strlen;
 
 #[CoversClass(ErrorSanitizer::class)]
@@ -104,7 +105,118 @@ final class ErrorSanitizerTest extends TestCase
         self::assertLessThan(1.0, microtime(true) - $start);
         self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redact($huge)));
         self::assertSame('short text', $sanitizer->redact('short text'));
-        self::assertSame(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redact(str_repeat('x', 5000))));
+        self::assertSame(ErrorSanitizer::TRUNCATED_MARKER, $sanitizer->redact(str_repeat('x', 5000)));
+    }
+
+    #[Test]
+    public function hundredKilobyteRedosInputsStayFast(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+        $inputs    = [
+            str_repeat('1.', 50000),
+            str_repeat('a.', 50000) . '@b',
+            str_repeat(':', 100000),
+            str_repeat('a', 100000),
+            str_repeat('password=', 12000),
+        ];
+
+        $start = microtime(true);
+        foreach ($inputs as $input) {
+            self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redact($input)));
+            self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($sanitizer->redactPersonalData($input)));
+            $sanitizer->sanitize(new RuntimeException($input));
+            $sanitizer->redactData(['k' => $input]);
+        }
+
+        self::assertLessThan(2.0, microtime(true) - $start);
+    }
+
+    #[Test]
+    public function truncatedTextIsMarkedAndCutAtTheLastWhitespace(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+        $text      = str_repeat('word ', 300) . "line\tend\n" . str_repeat('z', 2000);
+
+        $result = $sanitizer->redact($text);
+
+        self::assertSame(str_repeat('word ', 300) . "line\tend…[truncated]", $result);
+        self::assertSame('short…[truncated]', $sanitizer->redact('short ' . str_repeat('x', 2100)));
+        self::assertSame(str_repeat('a', 1998) . 'é', $sanitizer->redact(str_repeat('a', 1998) . 'é'));
+        self::assertSame('{"blob":"…[truncated]', $sanitizer->redact('{"blob":"' . str_repeat('x', 3000) . '"}'));
+    }
+
+    #[Test]
+    public function multibyteTextIsCutOnCharacterBoundaries(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        for ($pad = 1980; $pad <= 1990; ++$pad) {
+            foreach (['ñ', '€', '𝄞'] as $char) {
+                $result = $sanitizer->redact(str_repeat('a', $pad) . str_repeat($char . ' ', 100));
+                self::assertTrue(mb_check_encoding($result, 'UTF-8'), $char . $pad);
+                self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($result));
+                self::assertStringEndsWith(ErrorSanitizer::TRUNCATED_MARKER, $result);
+            }
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function secretsWithoutWhitespace(): iterable
+    {
+        foreach (['/' => '/', ';' => ';', ',' => ',', '|' => '|', 'newline' => "\n", 'tab' => "\t", 'none' => ''] as $name => $separator) {
+            yield 'url ' . $name => [$separator . 'redis://admin:Hunter2SECRETpw@redis.internal:6379/0' . $separator, 'admin'];
+            yield 'userinfo ' . $name => [$separator . 'admin:Hunter2SECRETpw@db.internal:5432' . $separator, 'admin'];
+            yield 'json ' . $name => [',"api_key":"Hunter2SECRETpw","n":1' . $separator, 'Hunter2'];
+            yield 'bearer ' . $name => [$separator . 'Bearer Hunter2SECRETpw' . $separator, 'Hunter2'];
+            yield 'pair ' . $name => [$separator . 'password=Hunter2SECRETpw' . $separator, 'Hunter2'];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('secretsWithoutWhitespace')]
+    public function aSecretNearTheCutIsNeverShownWithoutWhitespace(string $secret, string $userName): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        for ($pad = 1900; $pad <= 2000; ++$pad) {
+            foreach ([str_repeat('x', $pad) . $secret . str_repeat('y', 600), '{"blob":"' . str_repeat('x', $pad) . '"' . $secret . str_repeat('y', 600) . '}'] as $text) {
+                foreach ([$sanitizer->redact($text), $sanitizer->redactData(['message' => $text])['message'], $sanitizer->sanitize(new RuntimeException($text))] as $result) {
+                    self::assertIsString($result);
+                    self::assertStringNotContainsString('Hunter2', $result, (string) $pad);
+                    self::assertStringNotContainsString('SECRET', $result, (string) $pad);
+                    self::assertStringNotContainsString($userName . ':', $result, (string) $pad);
+                    self::assertLessThanOrEqual(ErrorSanitizer::MAX_INPUT_LENGTH, strlen($result));
+                }
+            }
+        }
+    }
+
+    #[Test]
+    public function aCredentialLongerThanTheLookaheadIsDroppedNotShownInPart(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        for ($pad = 1900; $pad <= 2000; $pad += 5) {
+            $result = $sanitizer->redact(str_repeat('x', $pad) . '/redis://admin:' . str_repeat('P', 900) . '@host');
+            self::assertStringNotContainsString('admin', $result, (string) $pad);
+            self::assertStringNotContainsString('PP', $result, (string) $pad);
+            self::assertStringEndsWith(ErrorSanitizer::TRUNCATED_MARKER, $result);
+        }
+    }
+
+    #[Test]
+    public function regressionCasesFromAuditQh3AreRedacted(): void
+    {
+        $sanitizer = new ErrorSanitizer();
+
+        $url  = $sanitizer->redact(str_repeat('x', 1970) . '/redis://admin:Hunter2SECRETpw@redis.internal:6379/' . str_repeat('y', 50));
+        $json = $sanitizer->redact('{"blob":"' . str_repeat('x', 1970) . '","api_key":"Hunter2SECRETpw","n":1}');
+
+        self::assertStringNotContainsString('Hunter2', $url);
+        self::assertStringNotContainsString('admin', $url);
+        self::assertStringNotContainsString('Hunter2', $json);
     }
 
     #[Test]

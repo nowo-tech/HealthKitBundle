@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `ErrorSanitizer::redact()` and `redactPersonalData()` bound their input to 2,000 bytes (cut back to the last whitespace) before running the regexes; the key/value pattern is quadratic, so 100 KB of text took about 17 s (audit QH-D5). Every caller (`sanitize()`, `redactData()`, probe messages, the recycle reason) is covered.
+- `ErrorSanitizer::redact()` and `redactPersonalData()` bound the regex input; the key/value pattern is quadratic, so 100 KB of text took about 17 s (audit QH-D5). Longer text is redacted on a 2,512-byte window and only the redacted result is cut to 2,000 bytes (back to the last whitespace, or past the trailing token when there is none, on UTF-8 boundaries), so a credential next to the cut keeps the terminator its pattern needs (URL `@`, closing JSON quote) and is never shown unredacted or in part (audit QH-D6). Every caller (`sanitize()`, `redactData()`, probe messages and the health warning log, the recycle reason) is covered.
 
 - `runtime.worker_recycle` hardening (audit QH): `WorkerRecycleException` has a constant message (the reason is logged once, at `log_level`, never carried by the exception that Symfony re-logs); the reason is redacted for emails and IP addresses as well as credentials (`ErrorSanitizer::redactPersonalData()`); the state-pool item expires after 30 days; broad `exception_classes` (`Throwable`, `Exception`, `RuntimeException`, `LogicException`, `HttpExceptionInterface`, DBAL `DriverException`...) are refused unless `allow_broad_exception_classes: true`; worker mode needs `worker=` with a value other than 0; a missing `state_pool` service fails the container build with an `InvalidConfigurationException`; broad-class guard also covers `HttpExceptionInterface` / DBAL `ConstraintViolationException` subclasses; IP addresses followed by `:port` or preceded by `:` are redacted. Docs: listeners below -8192 do not run on a recycled request, and the recycle is an uncaught exception (exit 255, CRITICAL log) to filter in Sentry/BeaconBundle.
 
@@ -22,6 +22,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Probe messages and string probe data longer than 2,000 bytes are now truncated, for every probe, and end with a visible `…[truncated]` marker (audit QH-I5). Status, durations, numeric data and `/metrics` are unchanged.
 - docs: demo screenshots regenerated on the UiKit base style
 - demo: opt into UiKit 2.51 `nowo_ui_kit.base_stylesheet`, use `nowo-ui-header__nav` for the masthead nav, screenshots regenerated with the themed shell
 

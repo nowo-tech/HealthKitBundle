@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\HealthKitBundle\Health;
 
+use Closure;
 use Throwable;
 
 use function filter_var;
@@ -14,9 +15,10 @@ use function preg_match;
 use function preg_replace;
 use function preg_replace_callback;
 use function sprintf;
+use function strcspn;
 use function strlen;
 use function strrchr;
-use function strrpos;
+use function strrev;
 use function substr;
 use function trim;
 
@@ -32,8 +34,20 @@ final class ErrorSanitizer
 {
     private const MAX_LENGTH = 300;
 
-    /** @var int longest text the redaction regexes run on (audit QH-D5: the key/value pattern is quadratic) */
+    /** @var int longest text returned by {@see redact()} and {@see redactPersonalData()}, in bytes (audits QH-D5, QH-D6) */
     public const MAX_INPUT_LENGTH = 2000;
+
+    /** @var string appended when the text was truncated (audit QH-I5) */
+    public const TRUNCATED_MARKER = '…[truncated]';
+
+    /** Extra bytes the regexes see past {@see MAX_INPUT_LENGTH}, so a credential near the cut keeps its terminator. */
+    private const LOOKAHEAD_LENGTH = 512;
+
+    /** Bytes matched by PCRE `\s` without the `u` modifier. */
+    private const WHITESPACE = " \t\n\v\f\r";
+
+    /** Characters that end a token when the kept text has no whitespace. */
+    private const TOKEN_SEPARATORS = "\"',;&|";
 
     /** Regex fragment matching secret-looking keys. */
     private const SECRET_KEY = '[a-z0-9_.-]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|auth[a-z_]*|credentials?)[a-z0-9_.-]*';
@@ -70,7 +84,18 @@ final class ErrorSanitizer
      */
     public function redact(string $text): string
     {
-        $text = $this->bound($text);
+        return $this->bounded($text, $this->redactCredentials(...));
+    }
+
+    /**
+     * Applies the credential patterns of {@see redact()} to already bounded text.
+     *
+     * @param string $text text of at most {@see MAX_INPUT_LENGTH} + {@see LOOKAHEAD_LENGTH} bytes
+     *
+     * @return string the redacted text
+     */
+    private function redactCredentials(string $text): string
+    {
         $text = (string) preg_replace('#\b(Bearer|Basic)\s+[A-Za-z0-9\-._~+/=]+#i', '$1 ***', $text);
         $text = (string) preg_replace('#([a-z][a-z0-9+.\-]*://)\S*@#i', '$1***@', $text);
         $text = (string) preg_replace('#(?<![\w.%+/:@-])[\w.%+-]+:(?!//)[^\s@]+@(?=[\w\[])#', '***@', $text);
@@ -94,7 +119,18 @@ final class ErrorSanitizer
      */
     public function redactPersonalData(string $text): string
     {
-        $text = $this->bound($text);
+        return $this->bounded($text, $this->redactPersonalDataPatterns(...));
+    }
+
+    /**
+     * Applies the personal-data patterns of {@see redactPersonalData()} to already bounded text.
+     *
+     * @param string $text text of at most {@see MAX_INPUT_LENGTH} + {@see LOOKAHEAD_LENGTH} bytes
+     *
+     * @return string the redacted text
+     */
+    private function redactPersonalDataPatterns(string $text): string
+    {
         $text = (string) preg_replace('#[\w.%+-]+@[\w-]+(?:\.[\w-]+)+#u', '***@***', $text);
 
         return (string) preg_replace_callback(
@@ -125,25 +161,37 @@ final class ErrorSanitizer
     }
 
     /**
-     * Bounds the text the redaction regexes run on.
+     * Redacts long text without quadratic regex time and without leaking a credential at the cut (audits QH-D5, QH-D6).
      *
-     * Longer text is cut to 2,000 bytes (on a character boundary) and then back to the last whitespace, so a credential
-     * cut in the middle (`redis://user:pa`) cannot leave a recognisable fragment. Callers cut their own output to a
-     * shorter length afterwards, so the dropped tail is never shown.
+     * Text up to {@see MAX_INPUT_LENGTH} bytes is redacted as is. Longer text is first cut to {@see MAX_INPUT_LENGTH}
+     * + {@see LOOKAHEAD_LENGTH} bytes, so the regexes stay bounded but still see the terminator a credential near the
+     * limit needs (the `@` of a URL, the closing quote of a JSON value). Only the redacted result is then cut to
+     * {@see MAX_INPUT_LENGTH} bytes, including the {@see TRUNCATED_MARKER}: back to the last whitespace, or, when the
+     * kept part has none, back past the trailing token. A credential longer than the lookahead that straddles the
+     * window is therefore dropped, never shown in part. Cuts fall on UTF-8 character boundaries.
      *
      * @param string $text text of any length
+     * @param Closure(string):string $redactor patterns to apply to the bounded text
      *
-     * @return string the text, at most 2,000 bytes
+     * @return string the redacted text, at most {@see MAX_INPUT_LENGTH} bytes
      */
-    private function bound(string $text): string
+    private function bounded(string $text, Closure $redactor): string
     {
         if (strlen($text) <= self::MAX_INPUT_LENGTH) {
-            return $text;
+            return $redactor($text);
         }
 
-        $cut   = mb_strcut($text, 0, self::MAX_INPUT_LENGTH);
-        $space = strrpos($cut, ' ');
+        $redacted = $redactor(mb_strcut($text, 0, self::MAX_INPUT_LENGTH + self::LOOKAHEAD_LENGTH));
+        $kept     = mb_strcut($redacted, 0, self::MAX_INPUT_LENGTH - strlen(self::TRUNCATED_MARKER));
+        $reversed = strrev($kept);
+        $tail     = strcspn($reversed, self::WHITESPACE);
+        if ($tail === strlen($kept)) {
+            $tail = strcspn($reversed, self::WHITESPACE . self::TOKEN_SEPARATORS);
+            $kept = substr($kept, 0, strlen($kept) - $tail);
+        } else {
+            $kept = substr($kept, 0, strlen($kept) - $tail - 1);
+        }
 
-        return $space === false ? $cut : substr($cut, 0, $space);
+        return $kept . self::TRUNCATED_MARKER;
     }
 }
