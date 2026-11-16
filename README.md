@@ -169,7 +169,7 @@ make release-check
 ## Tests and coverage
 
 - Tests: PHPUnit (PHP) — unit tests plus kernel integration tests (endpoints, opt-in routes, invalid configuration); Playwright e2e on the demo
-- PHP: 100% (761/761 statements, 852/852 elements; gate enforced in CI by `composer test-coverage-100`, no exclusions)
+- PHP: 100% (1065/1065 lines, 123/123 methods, 36/36 classes; gate enforced in CI by `composer test-coverage-100`, no exclusions)
 - TS/JS: N/A
 - Python: N/A
 

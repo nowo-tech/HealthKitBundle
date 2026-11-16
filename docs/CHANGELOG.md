@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- Spec Kit baseline brought up to date for 1.1.0–1.3.0 (REQ-SPECKIT-001/003): `code-inventory.md` maps 47/47 files, and `spec.md` gains FR-CFG-006, FR-HTTP-008, FR-RUN-005, FR-MET-006/007 and FR-RT-001…005.
+- README: the coverage figures in "Tests and coverage" now match CI.
+
 ## [1.3.0] - 2026-11-15
 
 ### Added
