@@ -79,6 +79,7 @@ fail the compilation.
 - **FR-CFG-003**: Autoconfiguration: `HealthProbeInterface` → `nowo_health_kit.probe`; `#[AsHealthProbe]` → tag with attributes; `MetricsProviderInterface` → `nowo_health_kit.metrics_provider`.
 - **FR-CFG-004**: `DoctrineProbePass` registers `doctrine.<name>` per DBAL connection (all or the configured list) and fails on unknown names or missing DoctrineBundle.
 - **FR-CFG-005**: `HealthProbePass` validates probe tags, defaults name/groups/critical/timeout, rejects duplicates, sorts probes by name and wires the clock (`clock` or `NativeClock`).
+- **FR-CFG-006**: `WorkerRecycleStatePoolPass` fails the container build when `runtime.worker_recycle.state_pool` names a missing service (1.3.0).
 - **FR-ROUTE-001**: `config/routes/health.yaml` and `config/routes/metrics.yaml` import the controller attribute routes; nothing else exposes them.
 
 ### HTTP
@@ -89,6 +90,7 @@ fail the compilation.
 - **FR-HTTP-004**: `DetailsAccessPolicy` grants details for `details.public`, `REMOTE_ADDR` (or `getClientIp()` with `trust_forwarded_ip`) in `allowed_ips` — never for requests carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` when `trust_forwarded_ip` is off — or a matching bearer token.
 - **FR-HTTP-005**: `BearerToken` reads only `Authorization: Bearer`, compares with `hash_equals()`, ignores tokens shorter than 16 chars.
 - **FR-HTTP-007**: `details.token_provider` / `metrics.token_provider` (`DetailsTokenProviderInterface`, `MetricsTokenProviderInterface`, both `TokenProviderInterface`) are resolved per request by `BearerToken::resolve()` only when an `Authorization: Bearer` header is present (`BearerToken::extract()`), exclusive with the static token; null, short or throwing providers fail closed and failures are logged with class names only.
+- **FR-HTTP-008**: `ready.public` / `live.public` (default `true`). When `false`, a caller the details rules do not allow gets the same 404 as an unknown URL (`HiddenEndpoint::notFound()`), and no probe or memo runs. `HiddenEndpointListener` (registered only then) applies it at `kernel.request` priority 31, including the trailing-slash 301 redirect. It also turns the router 405 into that 404 after replaying the path as a GET (1.1.0).
 - **FR-HTTP-006**: `/metrics` (`nowo_health_kit_metrics`): 404 disabled, 503 unconfigured, 401 + `WWW-Authenticate` unauthorized, 200 text 0.0.4 with token or a granted role (empty roles grant nobody).
 
 ### Probes and runner
@@ -103,6 +105,7 @@ fail the compilation.
 - **FR-RUN-001**: `HealthChecker` runs probes of a group in name order, passes each its timeout, turns exceptions into sanitized errors, marks overruns as errors, skips probes once the budget is spent (also in `checkAll()`), downgrades non-critical errors to degraded, logs failures without secrets.
 - **FR-RUN-002**: `HealthReport` / `ProbeReport` expose the overall status, HTTP health and the detailed array.
 - **FR-RUN-003**: `ErrorSanitizer` redacts URL userinfo, scheme-less `user:pass@host`, Bearer/Basic credentials and secret-looking key/value pairs (`=`, `:`, `=>`, JSON), truncates exceptions to 300 chars, and redacts host probe messages and data.
+- **FR-RUN-005**: Port `HealthCheckerInterface` (`check(group)`, `checkAll()`), implemented by `HealthChecker` and aliased in the container (1.2.0, REQ-ARCH-001).
 - **FR-RUN-004**: `#[AsHealthProbe]` carries name, groups, critical and timeout.
 
 ### Metrics
@@ -112,6 +115,16 @@ fail the compilation.
 - **FR-MET-003**: `MetricsCollector` runs providers once, merges same-name/same-type families (dropping duplicate series), drops type clashes, isolates failing providers and adds `health_kit_metrics_provider_up`.
 - **FR-MET-004**: `ProbeMetricsProvider` exports `health_probe_status`, `health_probe_duration_seconds` and numeric/boolean `health_probe_data`.
 - **FR-MET-005**: `MetricsProviderInterface::collect(): iterable<MetricFamily>`.
+- **FR-MET-006**: Port `MetricsCollectorInterface::collect()`, implemented by `MetricsCollector` and aliased; the controllers depend on the port (1.2.0, REQ-ARCH-001).
+- **FR-MET-007**: `WorkerRecycleMetricsProvider` (only with `runtime.worker_recycle`) exports `health_kit_worker_recycle_enabled`, `health_kit_worker_recycle_persistent`, `health_kit_worker_recycles_total` and `health_kit_worker_recycle_last_timestamp_seconds` (1.3.0).
+
+### Runtime guards (1.3.0, opt-in, off by default)
+
+- **FR-RT-001**: `WorkerRecycleListener` marks the request when `kernel.exception` carries a trigger class: Redis client exceptions plus `exception_classes`, also found in the previous chain. Host code can mark it through the `WorkerRecyclerInterface::requestRecycle()` port. The mark is cleared at the main `kernel.request`, at `kernel.terminate` and by `kernel.reset`.
+- **FR-RT-002**: At `kernel.terminate` (priority -8192), and only under Symfony's FrankenPHP worker runner, a marked request records the recycle, logs the redacted reason once and throws `WorkerRecycleException`, whose message is constant. The worker then ends after the response has been sent. Outside worker mode nothing is thrown.
+- **FR-RT-003**: `WorkerRecycleState` records recycles (count, last time, last reason) in the optional `state_pool` PSR-6 pool. Pool failures never stop a recycle, and no state is kept in the object.
+- **FR-RT-004**: `WorkerRecycleProbe` (`runtime.worker_recycle` probe) is degraded while the last recycle is newer than `recent_window` seconds. Data: `recycles_total`, `last_recycle_age_seconds`, `last_reason`.
+- **FR-RT-005**: `FormDataCollectorReset` (`runtime.dev_collector_reset`) clears the profiler form collector's per-form data on `kernel.terminate` (priority -4096) and on `kernel.reset`. It does nothing without the collector.
 
 ---
 
@@ -121,7 +134,7 @@ fail the compilation.
 - **SC-002**: PHPStan level 8 with FrankenPHP rulesets, `ignoreErrors: []`, 0 errors; Igor 0 KO.
 - **SC-003**: `RoutesOptInTest` proves rule 7; `HealthEndpointsTest` proves US-1…US-6 in a real kernel.
 - **SC-004**: Demo Playwright e2e green (`make test-e2e`).
-- **SC-005**: Code inventory maps **35/35** production files (33 under `src/` + 2 route files under `config/routes/`).
+- **SC-005**: Code inventory maps **47/47** production files (45 under `src/` + 2 route files under `config/routes/`).
 
 ---
 

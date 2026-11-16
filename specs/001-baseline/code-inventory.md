@@ -2,10 +2,10 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/health-kit-bundle`  
-**Last audited**: 2026-10-31
+**Last audited**: 2026-11-16 (v1.3.0)
 
 Scope: every file under `src/` plus the shipped route imports under `config/routes/` (the bundle path is the package
-root). Audit command: `find src config -type f | wc -l` → **35**.
+root). Audit command: `find src config -type f | wc -l` → **47**.
 
 ## Bundle and dependency injection
 
@@ -16,6 +16,7 @@ root). Audit command: `find src config -type f | wc -l` → **35**.
 | `src/DependencyInjection/NowoHealthKitExtension.php` | Bundle and DI | FR-CFG-002, FR-CFG-003 |
 | `src/DependencyInjection/Compiler/DoctrineProbePass.php` | Bundle and DI | FR-CFG-004 |
 | `src/DependencyInjection/Compiler/HealthProbePass.php` | Bundle and DI | FR-CFG-005 |
+| `src/DependencyInjection/Compiler/WorkerRecycleStatePoolPass.php` | Bundle and DI | FR-CFG-006 |
 | `src/Attribute/AsHealthProbe.php` | Probes and runner | FR-RUN-004, FR-CFG-003 |
 
 ## Routes
@@ -35,6 +36,8 @@ root). Audit command: `find src config -type f | wc -l` → **35**.
 | `src/Http/BearerToken.php` | HTTP | FR-HTTP-005, FR-HTTP-007 |
 | `src/Http/TokenProviderInterface.php` | HTTP | FR-HTTP-007 |
 | `src/Http/DetailsTokenProviderInterface.php` | HTTP | FR-HTTP-007 |
+| `src/Http/HiddenEndpoint.php` | HTTP | FR-HTTP-008 |
+| `src/EventListener/HiddenEndpointListener.php` | HTTP | FR-HTTP-008 |
 
 ## Probes
 
@@ -53,7 +56,8 @@ root). Audit command: `find src config -type f | wc -l` → **35**.
 
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
-| `src/Health/HealthChecker.php` | Probes and runner | FR-RUN-001 |
+| `src/Health/HealthCheckerInterface.php` | Probes and runner | FR-RUN-005 |
+| `src/Health/HealthChecker.php` | Probes and runner | FR-RUN-001, FR-RUN-005 |
 | `src/Health/RegisteredProbe.php` | Probes and runner | FR-RUN-001, FR-CFG-005 |
 | `src/Health/ProbeReport.php` | Probes and runner | FR-RUN-002 |
 | `src/Health/HealthReport.php` | Probes and runner | FR-RUN-002 |
@@ -71,15 +75,29 @@ root). Audit command: `find src config -type f | wc -l` → **35**.
 | `src/Metrics/MetricsCollector.php` | Metrics | FR-MET-003 |
 | `src/Metrics/ProbeMetricsProvider.php` | Metrics | FR-MET-004 |
 | `src/Metrics/MetricsTokenProviderInterface.php` | Metrics | FR-HTTP-007 |
+| `src/Metrics/MetricsCollectorInterface.php` | Metrics | FR-MET-006 |
+| `src/Metrics/WorkerRecycleMetricsProvider.php` | Metrics | FR-MET-007 |
+
+## Runtime guards
+
+| Source file | Spec section | Requirement IDs |
+| --- | --- | --- |
+| `src/Runtime/WorkerRecyclerInterface.php` | Runtime guards | FR-RT-001 |
+| `src/Runtime/WorkerRecycleListener.php` | Runtime guards | FR-RT-001, FR-RT-002 |
+| `src/Runtime/WorkerRecycleException.php` | Runtime guards | FR-RT-002 |
+| `src/Runtime/WorkerRecycleState.php` | Runtime guards | FR-RT-003 |
+| `src/Probe/WorkerRecycleProbe.php` | Runtime guards | FR-RT-004 |
+| `src/Runtime/FormDataCollectorReset.php` | Runtime guards | FR-RT-005 |
 
 ## Coverage summary
 
 | Category | Files |
 | --- | --- |
-| Bundle and dependency injection | 6 |
+| Bundle and dependency injection | 7 |
 | Routes | 2 |
-| HTTP layer | 6 |
+| HTTP layer | 8 |
 | Probes | 8 |
-| Runner | 5 |
-| Metrics | 8 |
-| **Total production sources** | **35 / 35** |
+| Runner | 6 |
+| Metrics | 10 |
+| Runtime guards | 6 |
+| **Total production sources** | **47 / 47** |
