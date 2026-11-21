@@ -1,0 +1,10 @@
+{#- One live endpoint answer: HTTP status badge + raw body. Variables: title, intro (html), call. -#}
+{% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: title, intro: null, kind: 'detail', call: call, intro_html: intro} %}
+    {% block section_actions %}
+        <span class="nowo-ui-badge nowo-ui-badge--{{ call.status == 200 ? 'success' : (call.status == 503 ? 'danger' : 'warning') }}">HTTP {{ call.status }}</span>
+    {% endblock %}
+    {% block section_body %}
+        <p class="nowo-ui-muted">{{ intro_html|raw }}</p>
+        <pre class="nowo-ui-code-block" tabindex="0">{{ call.body }}</pre>
+    {% endblock %}
+{% endembed %}

@@ -1,29 +1,19 @@
-{#- REQ-DEMO-014: the demo shell is UiKit's admin layout with UiKit's default theme (nowo-ui.css from the bundle's own
-    asset package, no CSS framework, no CDN). The masthead lists the demo pages with the active item. -#}
-{% extends '@NowoUiKit/layout/admin.html.twig' %}
+{#- REQ-DEMO-014: the demo runs inside UiKit's shared demo platform shell (@NowoUiKit/demo_platform/layout.html.twig):
+    the same top bar, aside, content width, theme and footer as every other nowo-tech bundle demo. This file only
+    declares the demo (nowo_ui_demo_platform). The nav lists the demo page and the bundle's raw endpoints. -#}
+{% extends '@NowoUiKit/demo_platform/layout.html.twig' %}
+{% set nowo_ui_demo_platform = {
+    bundle: 'Health Kit',
+    home_route: 'demo_home',
+    repository: 'https://github.com/nowo-tech/HealthKitBundle',
+    translation_domain: false,
+    locales: [],
+    nav: [
+        {label: 'Overview', route: 'demo_home', section: 'Demo'},
+        {label: '/health/live', route: 'nowo_health_kit_live', section: 'Bundle endpoints'},
+        {label: '/health/ready', route: 'nowo_health_kit_ready', section: 'Bundle endpoints'},
+        {label: '/metrics', route: 'nowo_health_kit_metrics', section: 'Bundle endpoints'},
+    ],
+} %}
 
 {% block nowo_ui_document_title %}{% block title %}Health Kit Bundle demo{% endblock %}{% endblock %}
-
-{% block nowo_ui_styles %}
-    {{ parent() }}
-    <style>table.checks td:first-child code { white-space: nowrap; } table.checks td:last-child { overflow-wrap: anywhere; word-break: break-word; }</style>
-{% endblock %}
-
-{% block nowo_ui_navigation %}
-    {% set _route = app.request.attributes.get('_route') %}
-    <header class="nowo-ui-header" data-testid="demo-masthead">
-        <a class="nowo-ui-brand" href="{{ path('demo_home') }}">Health Kit Bundle · Symfony 8.1</a>
-        <nav class="nowo-ui-header__nav" aria-label="Demo">
-            {% for item in [
-                {route: 'demo_home', label: 'Overview'},
-                {route: 'nowo_health_kit_live', label: '/health/live'},
-                {route: 'nowo_health_kit_ready', label: '/health/ready'},
-                {route: 'nowo_health_kit_metrics', label: '/metrics'},
-            ] %}
-                <a class="nowo-ui-link" href="{{ path(item.route) }}"{% if _route == item.route %} aria-current="page"{% endif %}>{{ item.label }}</a>
-            {% endfor %}
-        </nav>
-    </header>
-{% endblock %}
-
-{% block nowo_ui_content %}{% block body %}{% endblock %}{% endblock %}

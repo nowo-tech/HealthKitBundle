@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.
+
 ### Documentation
 
 - Spec Kit baseline brought up to date for 1.1.0–1.3.0 (REQ-SPECKIT-001/003): `code-inventory.md` maps 47/47 files, and `spec.md` gains FR-CFG-006, FR-HTTP-008, FR-RUN-005, FR-MET-006/007 and FR-RT-001…005.
