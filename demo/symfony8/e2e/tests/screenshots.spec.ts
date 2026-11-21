@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * REQ-DEMO-013 — README screenshots in full demo context: masthead + live bundle output + Symfony web debug toolbar.
+ * REQ-DEMO-013 — README screenshots in full demo context: demo platform shell + live bundle output (the Symfony web debug toolbar is hidden).
  * Captured as PNG; `make demo-screenshots` converts them to WebP and deletes the PNGs.
  */
 test.describe.configure({ mode: 'serial' });
@@ -16,8 +16,7 @@ const WIDTH = 1440;
 
 async function capture(page: Page, file: string, height: number): Promise<void> {
   await page.setViewportSize({ width: WIDTH, height });
-  const toolbar = page.locator('.sf-toolbar .sf-toolbarreset');
-  await expect(toolbar).toBeVisible();
+  await page.addStyleTag({ content: '.sf-toolbar,.sf-minitoolbar,[id^="sfwdt"]{display:none!important}' });
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done, 600))));
   await page.screenshot({ path: resolve(outDir, file) });
 }
@@ -26,7 +25,7 @@ test.beforeAll(() => {
   mkdirSync(outDir, { recursive: true });
 });
 
-test.describe('Health Kit screenshots (full demo frame)', () => {
+test.describe('Health Kit screenshots (demo platform shell)', () => {
   test.use({ colorScheme: 'light' });
 
   test('readiness probes — table, public answer and liveness details', async ({ page }) => {

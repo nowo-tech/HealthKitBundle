@@ -2,20 +2,6 @@
 
 {% block title %}Health checks and metrics — Health Kit Bundle demo{% endblock %}
 
-{% macro status_badge(status) %}
-    <span class="nowo-ui-badge nowo-ui-badge--{{ status == 200 ? 'success' : (status == 503 ? 'danger' : 'warning') }}">HTTP {{ status }}</span>
-{% endmacro %}
-
-{% macro response_card(title, intro, call) %}
-    <section class="nowo-ui-card">
-        <div class="nowo-ui-card__header"><h2 class="nowo-ui-card__title">{{ title }} {{ _self.status_badge(call.status) }}</h2></div>
-        <div class="nowo-ui-card__body">
-            <p class="nowo-ui-muted">{{ intro|raw }}</p>
-            <pre class="nowo-ui-code-block">{{ call.body }}</pre>
-        </div>
-    </section>
-{% endmacro %}
-
 {% block nowo_ui_page_header %}
     {{ include(nowo_ui_partial('page_header'), {
         title: 'Health checks and Prometheus metrics',
@@ -26,35 +12,32 @@
 {% block body %}
     {% set checks = detailed.decoded.checks|default({}) %}
     {% set overall = detailed.decoded.status|default('error') %}
-    <section class="nowo-ui-card">
-        <div class="nowo-ui-card__header">
-            <h2 class="nowo-ui-card__title">Readiness probes
-                <span class="nowo-ui-badge nowo-ui-badge--{{ overall == 'ok' ? 'success' : (overall == 'degraded' ? 'warning' : 'danger') }}">overall: {{ detailed.decoded.status|default('?') }}</span>
-                {{ _self.status_badge(detailed.status) }}
-            </h2>
-        </div>
-        <div class="nowo-ui-card__body">
-            <p class="nowo-ui-muted">What an allowlisted IP or a <code class="nowo-ui-code">Authorization: Bearer &lt;details.token&gt;</code> caller sees.</p>
+    {% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: 'Readiness probes', intro: 'What an allowlisted IP or a Authorization: Bearer <details.token> caller sees.', kind: 'table', checks: checks, overall: overall, detailed: detailed} %}
+        {% block section_actions %}
+            <span class="nowo-ui-badge nowo-ui-badge--{{ overall == 'ok' ? 'success' : (overall == 'degraded' ? 'warning' : 'danger') }}">overall: {{ detailed.decoded.status|default('?') }}</span>
+            <span class="nowo-ui-badge nowo-ui-badge--{{ detailed.status == 200 ? 'success' : (detailed.status == 503 ? 'danger' : 'warning') }}">HTTP {{ detailed.status }}</span>
+        {% endblock %}
+        {% block section_body %}
             <table class="nowo-ui-data-table checks">
-                <thead><tr><th scope="col">Probe</th><th scope="col">Status</th><th scope="col">Critical</th><th scope="col">Duration</th><th scope="col">Message / data</th></tr></thead>
+                <thead><tr><th scope="col">Probe</th><th scope="col">Status</th><th scope="col">Critical</th><th scope="col" class="nowo-ui-cell--num">Duration</th><th scope="col">Message / data</th></tr></thead>
                 <tbody>
                 {% for name, check in checks %}
                     <tr>
                         <td><code class="nowo-ui-code">{{ name }}</code></td>
                         <td><span class="nowo-ui-badge nowo-ui-badge--{{ check.status == 'ok' ? 'success' : (check.status == 'degraded' ? 'warning' : 'danger') }}">{{ check.status }}</span></td>
                         <td>{{ check.critical ? 'yes' : 'no' }}</td>
-                        <td>{{ check.duration_ms|number_format(2) }} ms</td>
-                        <td>{{ check.message|default('') }}{% if check.data is defined %} {{ check.data|json_encode }}{% endif %}</td>
+                        <td class="nowo-ui-cell--num">{{ check.duration_ms|number_format(2) }} ms</td>
+                        <td class="nowo-ui-cell--wrap">{{ check.message|default('') }}{% if check.data is defined %} {{ check.data|json_encode }}{% endif %}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
-        </div>
-    </section>
+        {% endblock %}
+    {% endembed %}
 
-    {{ _self.response_card('Public caller — GET /health/ready', 'Anonymous callers (here <code class="nowo-ui-code">203.0.113.10</code>) only get the status; the answer is memoised per worker for 5 s.', public) }}
-    {{ _self.response_card('Token caller — GET /health/live', 'Liveness with details: version, client IP and the FrankenPHP runtime snapshot.', live) }}
-    {{ _self.response_card('Scraper — GET /metrics', 'Bearer <code class="nowo-ui-code">metrics.token</code>: probe gauges plus the host providers (build info, page views in Redis).', metrics) }}
-    {{ _self.response_card('No token — GET /metrics', 'Fail closed: no token or role, no metrics.', denied) }}
-    {{ _self.response_card('Detailed readiness JSON', 'Raw body of the token request shown in the table above.', detailed) }}
+    {{ include('demo/_response_card.html.twig', {title: 'Public caller — GET /health/ready', intro: 'Anonymous callers (here <code class="nowo-ui-code">203.0.113.10</code>) only get the status; the answer is memoised per worker for 5 s.', call: public}) }}
+    {{ include('demo/_response_card.html.twig', {title: 'Token caller — GET /health/live', intro: 'Liveness with details: version, client IP and the FrankenPHP runtime snapshot.', call: live}) }}
+    {{ include('demo/_response_card.html.twig', {title: 'Scraper — GET /metrics', intro: 'Bearer <code class="nowo-ui-code">metrics.token</code>: probe gauges plus the host providers (build info, page views in Redis).', call: metrics}) }}
+    {{ include('demo/_response_card.html.twig', {title: 'No token — GET /metrics', intro: 'Fail closed: no token or role, no metrics.', call: denied}) }}
+    {{ include('demo/_response_card.html.twig', {title: 'Detailed readiness JSON', intro: 'Raw body of the token request shown in the table above.', call: detailed}) }}
 {% endblock %}
