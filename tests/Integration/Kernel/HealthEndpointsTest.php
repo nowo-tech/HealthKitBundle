@@ -12,6 +12,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
+use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
+
+use function is_subclass_of;
 
 /**
  * End-to-end behaviour of /health/live, /health/ready and /metrics in a real kernel.
@@ -80,7 +84,8 @@ final class HealthEndpointsTest extends KernelTestCase
         self::assertIsArray($ready['checks']);
         self::assertSame(['auto_named', 'doctrine.default', 'messenger.async', 'payments_api'], array_keys($ready['checks']));
         self::assertSame('ok', $ready['checks']['doctrine.default']['status']);
-        self::assertSame('degraded', $ready['checks']['messenger.async']['status']);
+        // The in-memory transport reports its message count since Symfony 8.2; before, the probe could only say it cannot.
+        self::assertSame(is_subclass_of(InMemoryTransport::class, MessageCountAwareInterface::class) ? 'ok' : 'degraded', $ready['checks']['messenger.async']['status']);
         self::assertSame('degraded', $ready['checks']['payments_api']['status']);
         self::assertFalse($ready['checks']['payments_api']['critical']);
         self::assertSame('Payments API unreachable.', $ready['checks']['payments_api']['message']);

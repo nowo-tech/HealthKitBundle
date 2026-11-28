@@ -88,7 +88,7 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" https://app.example/metrics
 
 ## Requirements
 
-- PHP **8.2+** (`>=8.2 <8.6`; Symfony 8.x requires PHP 8.4+)
+- PHP **8.2+** (`>=8.2 <8.7`; Symfony 8.x requires PHP 8.4+)
 - Symfony **7.4**, **8.0** or **8.1** (`symfony/http-kernel`, `routing`, `dependency-injection`, `config`, `http-foundation`, `clock`)
 - Optional: `doctrine/doctrine-bundle` (Doctrine probes), `symfony/cache` (Redis DSN probe), `symfony/messenger` (queue probes), `symfony/security-core` (`metrics.roles`)
 

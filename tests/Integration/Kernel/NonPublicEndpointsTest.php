@@ -12,6 +12,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
+use function str_contains;
+
 /**
  * `live.public` / `ready.public` false in a real kernel: unknown callers get the same 404 as an unknown URL.
  */
@@ -52,9 +54,14 @@ final class NonPublicEndpointsTest extends KernelTestCase
         self::assertFalse($response->headers->has('Allow'));
         self::assertFalse($response->headers->has('X-Robots-Tag'));
         if ($method !== 'HEAD') {
-            self::assertStringContainsString('NotFoundHttpException', (string) $unknown->getContent());
-            self::assertStringContainsString('NotFoundHttpException', (string) $response->getContent());
-            self::assertStringContainsString('No route found for "' . $method . ' http://localhost' . $uri . '"', (string) $response->getContent());
+            if (str_contains((string) $unknown->getContent(), 'NotFoundHttpException')) {
+                self::assertStringContainsString('NotFoundHttpException', (string) $response->getContent());
+                self::assertStringContainsString('No route found for "' . $method . ' http://localhost' . $uri . '"', (string) $response->getContent());
+            } else {
+                // Symfony 7.4.24+ / 8.1.12+ no longer print the exception class and message in the production error page:
+                // the page of the hidden endpoint must then be exactly the page of an unknown URL.
+                self::assertSame((string) $unknown->getContent(), (string) $response->getContent());
+            }
             self::assertStringNotContainsString('"status"', (string) $response->getContent());
         }
     }
@@ -127,7 +134,9 @@ final class NonPublicEndpointsTest extends KernelTestCase
         // Referer is echoed in the message like the router does; format suffixes have no route at all.
         $referred = $this->send($kernel, 'GET', '/health/ready', ['HTTP_REFERER' => 'https://elsewhere.test/']);
         $this->assertLikeUnknownUrl($this->send($kernel, 'GET', '/no-such-endpoint', ['HTTP_REFERER' => 'https://elsewhere.test/']), $referred, 'GET', '/health/ready');
-        self::assertStringContainsString('No route found for "GET http://localhost/health/ready" (from "https://elsewhere.test/")', (string) $referred->getContent());
+        if (str_contains((string) $referred->getContent(), 'NotFoundHttpException')) {
+            self::assertStringContainsString('No route found for "GET http://localhost/health/ready" (from "https://elsewhere.test/")', (string) $referred->getContent());
+        }
         foreach (['/health/ready.json', '/health/live.json'] as $uri) {
             $this->assertLikeUnknownUrl($this->send($kernel, 'GET', '/no-such-endpoint'), $this->send($kernel, 'GET', $uri), 'GET', $uri);
         }
